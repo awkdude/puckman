@@ -1,0 +1,18 @@
+{
+	"$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/ols.schema.json",
+	"collections": [ { "name": "odinlib", "path": "w:/odinlib" } ],
+  "enable_format": false,
+  "enable_code_action_invert_if": false,
+  "enable_semantic_tokens": false,
+  "enable_document_symbols": true,
+  "enable_auto_import": true,
+  "enable_hover": true,
+  "enable_snippets": true,
+  "profile": "default",
+  "profiles": [
+  {
+      "name": "windows_profile",
+      "defines": {"PLATFORM_BACKEND": "native"}
+  }
+  ]
+}
