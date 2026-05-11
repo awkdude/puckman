@@ -13,8 +13,11 @@ import "core:os"
 import "core:time"
 import "core:fmt"
 
+frame_tick: time.Tick
+
 when src.PLATFORM_BACKEND == "sdl" {
 	USE_OPENGL :: false
+
 	sdl_window: ^sdl.Window
 	sdl_gamepad: ^sdl.Gamepad
 	vec2 :: util.vec2
@@ -28,8 +31,7 @@ when src.PLATFORM_BACKEND == "sdl" {
 	}
 
 	main :: proc() {
-	// {{{
-	    context.logger = log.create_console_logger()
+	  context.logger = log.create_console_logger()
 	    context.logger.options -= {.Date}
 	    if !sdl.Init({.VIDEO, .EVENTS, .GAMEPAD}) {
 	        log.panic("Could not init SDL")
@@ -69,6 +71,34 @@ when src.PLATFORM_BACKEND == "sdl" {
 	    for pair in sdl_key_to_keycode_mappings {
 	        keycode_map[pair.k] = pair.v
 	    }
+        sdl_pixel_format := sdl.GetWindowPixelFormat(sdl_window)
+        sdl_pixel_format_details := sdl.GetPixelFormatDetails(sdl_pixel_format)
+        pixel_format := util.Pixel_Format {
+            r=sdl_pixel_format_details.Rshift,
+            g=sdl_pixel_format_details.Gshift,
+            b=sdl_pixel_format_details.Bshift,
+            a=sdl_pixel_format_details.Ashift,
+        }
+        // Find alpha shift value if non-existent
+        if sdl_pixel_format_details.Abits == 0 {
+            possible_shifts := [4]u8 {0, 8, 16, 24}
+            for shift in possible_shifts {
+                if shift != sdl_pixel_format_details.Rshift &&
+                shift != sdl_pixel_format_details.Gshift &&
+                shift != sdl_pixel_format_details.Bshift
+                {
+                    pixel_format.a = shift
+                    break
+                }
+            }
+        }
+        log.debugf(
+            "R: %v, G: %v, B: %v, A: %v",
+            pixel_format.r,
+            pixel_format.g,
+            pixel_format.b,
+            pixel_format.a,
+        )
 	    for running {
 	        handle_events()
 	        w, h: i32
@@ -80,7 +110,8 @@ when src.PLATFORM_BACKEND == "sdl" {
 	            w=w,
 	            h=h,
 	            pitch=window_surface.pitch,
-	            // TODO: set pixel format
+                pixel_format=pixel_format,
+                bytes_per_pixel=4,
 	        }
 	        U := src.Game_Update{
 	            window_size={w, h},
@@ -90,9 +121,9 @@ when src.PLATFORM_BACKEND == "sdl" {
 	        }
 	        if !src.game_update_render(U) do return
 	        sdl.UpdateWindowSurface(sdl_window)
+			util.wait_frame_interval(&frame_tick, 16666 * time.Microsecond)
 	        // sdl.GL_SwapWindow(sdl_window)
 	    }
-	// }}}
 	}
 
 	set_gamepad_rumble_sdl :: proc(weak, strong: f32) {
@@ -190,6 +221,10 @@ when src.PLATFORM_BACKEND == "sdl" {
 	                type=.Drop,
 	                files=drop_files[:],
 	            }
+									case .JOYSTICK_ADDED:
+										log.debug("Joystick added")
+									case .JOYSTICK_REMOVED:
+										log.debug("Joystick removed")
 	        }
 	        if event, ok := window_event.?; ok {
 	            src.game_handle_event( event)
@@ -221,7 +256,8 @@ when src.PLATFORM_BACKEND == "sdl" {
 	// }}}
 	}
 
-	get_gamepad_state_sdl :: proc() -> (util.Gamepad_State, bool) { // {{{
+	get_gamepad_state_sdl :: proc() -> (util.Gamepad_State, bool) {
+		// {{{
 	    if sdl_gamepad == nil {
 	        if sdl.HasGamepad() {
 	            count: i32
@@ -241,7 +277,6 @@ when src.PLATFORM_BACKEND == "sdl" {
 	        return {}, false
 	    }
 	    gamepad_state := util.Gamepad_State {
-	        // {{{
 	        axes={
 	            .LEFT_X=util.normalize_to_range(
 	                cast(f32)sdl.GetGamepadAxis(sdl_gamepad, .LEFTX),
@@ -286,7 +321,6 @@ when src.PLATFORM_BACKEND == "sdl" {
 	                1.0
 	            ),
 	        }
-	        // }}}
 	    }
 	    // buttons {{{
 	    if sdl.GetGamepadButton(sdl_gamepad, .SOUTH) {
@@ -335,7 +369,7 @@ when src.PLATFORM_BACKEND == "sdl" {
 	    }
 	    // }}}
 	    return gamepad_state, true
-	} // }}}
+	}
 
 	// NOTE: A-Z, 0-9, F1-F12 not needed
 	sdl_key_to_keycode_mappings := []struct { k: int, v: u32 } {

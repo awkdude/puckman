@@ -2,13 +2,16 @@ package src
 
 import "odinlib:util"
 import "core:slice"
+import "core:math/linalg"
+import "core:log"
 
 Rect :: util.Rect
 Color4f :: util.Color4f
+ColorU32 :: util.ColorU32
 Color4b :: util.Color4b
 Pixmap :: util.Pixmap
-color4b_to_4f :: util.color4b_to_4f
-color4f_to_4b :: util.color4f_to_4b
+pack_color :: util.pack_color_4f
+unpack_color :: util.unpack_color_4f
 
 
 alpha_blend :: proc "contextless" (top, bottom: Color4f) -> Color4f {
@@ -18,14 +21,21 @@ alpha_blend :: proc "contextless" (top, bottom: Color4f) -> Color4f {
     return final_c
 }
 
-blit :: proc "contextless" (
+blit :: proc(
     dst_pixmap, src_pixmap: Pixmap,
     off: vec2,
     dst_rect: ^Rect = nil,
     src_rect: ^Rect = nil)
 {
-    src_pixels := cast([^]Color4b)src_pixmap.pixels
-    dst_pixels := cast([^]Color4b)dst_pixmap.pixels
+	log.assertf(
+		dst_pixmap.bytes_per_pixel == src_pixmap.bytes_per_pixel,
+		"Dst bpp: %v, Src bpp: %v",
+		dst_pixmap.bytes_per_pixel,
+		src_pixmap.bytes_per_pixel
+	 )
+	assert( dst_pixmap.pixel_format == src_pixmap.pixel_format )
+	src_pixels := cast([^]ColorU32)src_pixmap.pixels
+    dst_pixels := cast([^]ColorU32)dst_pixmap.pixels
     dst_min_x: i32 = off.x
     dst_max_x := off.x + src_pixmap.w
     dst_min_y: i32 = off.y
@@ -67,8 +77,8 @@ blit :: proc "contextless" (
                 dst_pixels[row_d + dst_x] = src_c
             } else if src_alpha > 0 {
                 dst_c := dst_pixels[row_d + dst_x]
-                blended_c := alpha_blend(color4b_to_4f(src_c), color4b_to_4f(dst_c))
-                dst_pixels[row_d + dst_x] = color4f_to_4b(blended_c)
+                blended_c := alpha_blend(unpack_color(src_c), unpack_color(dst_c))
+                dst_pixels[row_d + dst_x] = pack_color(blended_c)
             }
             dst_x += 1
         }
@@ -77,11 +87,17 @@ blit :: proc "contextless" (
     }
 }
 
+edge_cross :: proc "contextless" (p: vec2f, p1, p2: vec2f) -> f32 {
+	ab := p2 - p1
+	ap := p - p1
+	return linalg.vector_cross2(ab, ap)
+}
+
 pixmap_fill :: proc "contextless" (pixmap: Pixmap, color: Color4f) {
-	coloru8 := color4f_to_4b(color)
-	pixels := cast([^]Color4b)pixmap.pixels
+	color_u32 := pack_color(color)
+	pixels := cast([^]ColorU32)pixmap.pixels
 	area := pixmap.w * pixmap.h
-    slice.fill(pixels[:area], coloru8)
+    slice.fill(pixels[:area], color_u32)
 }
 
 fill_rect :: proc "contextless" (pixmap: Pixmap, r: Rect, color: Color4f) {
@@ -97,11 +113,11 @@ fill_rect :: proc "contextless" (pixmap: Pixmap, r: Rect, color: Color4f) {
     if x1 > pixmap.w do x1 = pixmap.w
     if y1 > pixmap.h do y1 = pixmap.h
 
-    pixels := cast([^]Color4b)pixmap.pixels
+    pixels := cast([^]ColorU32)pixmap.pixels
     row := y0 * pixmap.w
 
     if color.a >= 1.0 {
-        c_u8 := color4f_to_4b(color)
+        c_u8 := pack_color(color)
         for y in y0..<y1 {
             for x in x0..<x1 {
                 pixels[row + x] = c_u8
@@ -113,9 +129,9 @@ fill_rect :: proc "contextless" (pixmap: Pixmap, r: Rect, color: Color4f) {
         src_b := color * color.a
         for y in y0..<y1 {
             for x in x0..<x1 {
-                blended_c := src_b + color4b_to_4f(pixels[row+x]) * one_minus_src_alpha
+                blended_c := src_b + unpack_color(pixels[row+x]) * one_minus_src_alpha
                 blended_c.a = 1.0
-                pixels[row + x] = color4f_to_4b(blended_c)
+                pixels[row + x] = pack_color(blended_c)
             }
             row += pixmap.w
         }

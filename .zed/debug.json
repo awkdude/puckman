@@ -9,15 +9,17 @@
     "build": {
       "label": "odin debug build",
       "command": "odin",
+      "request": "launch",
       "args": [
         "build",
-        "$ZED_DIRNAME",
+        "w:\\puckman",
         "-out:debug_build.exe",
         "-debug",
-        "--collection:odinlib=w:/odinlib"
+        "--collection:odinlib=w:\\odinlib"
       ],
+      "program": "debug_build",
       "env": {},
-      "cwd": null,
+      "cwd":  "W:\\puckman",
       "use_new_terminal": false,
       "allow_concurrent_runs": false,
       "reveal": "always",
@@ -41,6 +43,23 @@
     "name": "puckman (CodeLLDB)",
     "program": "puckman",
     "stopOnEntry": false,
-    "cwd": "W:\\puckman"
+    "cwd": "W:\\puckman",
+    "build": {
+      "command": "odin",
+      "args": ["build", "$ZED_WORKTREE_ROOT", "-debug", "--collection:odinlib=w:\\odinlib" ]
+    },
+  },
+  {
+    "adapter": "CodeLLDB",
+    "label": "puckman SDL3 (CodeLLDB)",
+    "request": "launch",
+    "name": "puckman SDL3 (CodeLLDB)",
+    "program": "puckman",
+    "stopOnEntry": false,
+    "cwd": "W:\\puckman",
+    "build": {
+      "command": "odin",
+      "args": ["build", "$ZED_WORKTREE_ROOT", "-debug", "--collection:odinlib=w:\\odinlib", "-define:BACKEND=sdl"]
+    },
   }
 ]

@@ -237,6 +237,7 @@ main :: proc() {
 			win.SRCCOPY,
 		)
 		win.ReleaseDC(window_handle, device_context)
+		util.wait_frame_interval(&frame_tick, 16666 * time.Microsecond)
         // device_context := win.GetDC(window_handle)
         // win.SwapBuffers(device_context)
         // win.ReleaseDC(window_handle, device_context)
@@ -247,9 +248,14 @@ update_framebuffer_win32 :: proc() {
 	rect: win.RECT
 	win.GetClientRect(window_handle, &rect)
 	w, h := rect.right - rect.left, rect.bottom - rect.top
-	framebuffer_pixmap.w = w
-	framebuffer_pixmap.h = h
-	framebuffer_pixmap.pitch = w * 4
+	framebuffer_pixmap = util.Pixmap {
+		pixels=nil,
+		w = w,
+		h = h,
+		pitch = w * 4,
+		bytes_per_pixel=4,
+	    pixel_format = util.DEFAULT_PIXEL_FORMAT,
+	}
 	bitmap_info = win.BITMAPINFO {
 		bmiHeader = {
 			biSize = u32(size_of(win.BITMAPINFOHEADER)),
@@ -464,6 +470,7 @@ window_proc :: proc "stdcall" (
             type=.Window_Resize,
             vec2={width, height},
         }
+        update_framebuffer_win32()
     case win.WM_GETMINMAXINFO:
         min_max_info := transmute(^win.MINMAXINFO)lparam
         if min_size, ok := min_window_size.?; ok {
