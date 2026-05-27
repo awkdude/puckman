@@ -19,9 +19,8 @@ import "base:runtime"
 import "core:strings"
 import "core:c/libc"
 import "odinlib:util"
-import "src"
 
-when src.PLATFORM_BACKEND == "native" {
+when PLATFORM_BACKEND == "native" {
 
 USE_OPENGL :: false
 vec2 :: util.vec2
@@ -155,7 +154,7 @@ main :: proc() {
     // }}}
 
     update_framebuffer_win32()
-    game_ok := src.game_init(src.Game_Init{
+    game_ok := game_init(Game_Init{
         // gl_set_proc_address=win.gl_set_proc_address,
         set_gamepad_rumble_proc=set_gamepad_rumble_xinput,
         platform_command_proc=handle_platform_command_win,
@@ -214,7 +213,7 @@ main :: proc() {
         // }
         // }}}
         gamepad_state, is_connected := get_gamepad_state_xinput()
-        game_update := src.Game_Update{
+        game_update := Game_Update{
                 window_size={
                 client_rect.right-client_rect.left,
                 client_rect.bottom-client_rect.top,
@@ -223,7 +222,7 @@ main :: proc() {
             is_gamepad_connected=is_connected,
             framebuffer=framebuffer_pixmap,
         }
-        if !src.game_update_render(game_update) do return
+        if !game_update_render(game_update) do return
 		device_context := win.GetDC(window_handle)
 		win.BitBlt(
 			device_context,
@@ -505,7 +504,7 @@ window_proc :: proc "stdcall" (
     if running {
         if event, ok := window_event.?; ok {
             event.source_window = cast(util.Window_ID)window_handle
-            src.game_handle_event(event)
+            game_handle_event(event)
         }
     }
 

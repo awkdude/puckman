@@ -1,4 +1,4 @@
-package src
+package main
 import "odinlib:util"
 import "odinlib:file_load"
 import "core:log"
@@ -8,43 +8,34 @@ import "core:time"
 import "core:fmt"
 import "core:math"
 import "core:os"
+import "core:dynlib"
 import "core:sync"
 import "core:math/bits"
 import stbtt "vendor:stb/truetype"
 import stbi "vendor:stb/image"
 
-vec2 :: util.vec2
+
+// TODO: Rename game_ and Game_ to eng_ and Engine_
+// Purpose of this abstraction layer is to hotload "modules" (the actual game code)
+
 vec2f :: util.vec2f
 
 PLATFORM_BACKEND :: #config(BACKEND, "native")
 
 THUMBSTICK_THRESHOLD :: 0.5
 
-MAP_DIMS := vec2{5, 7}
-
-map_ :=[?]i32 {
-	1, 1, 1, 1, 1,
-	0, 0, 1, 0, 0,
-	0, 1, 1, 1, 0,
-	0, 0, 1, 0, 0,
-	0, 1, 0, 0, 0,
-	0, 1, 0, 0, 0,
-	1, 1, 1, 1, 1,
-}
-
 FONT_PATH :: "resources/DejaVu Sans Mono_512x512x16x16.png"
 
 // Struct to initialize the game
-Game_Init :: struct {
+Game_Init :: struct #all_or_none {
     // gl_set_proc_address=win.gl_set_proc_address,
     set_gamepad_rumble_proc: proc(weak, strong: f32),
     platform_command_proc: proc(_: util.Platform_Command),
     get_window_dpi: proc() -> i32,
-    window_size: vec2,
     pixel_format: util.Pixel_Format
 }
 
-Game_Update :: struct {
+Game_Update :: struct #all_or_none {
 	window_size: vec2,
     gamepad_state: util.Gamepad_State,
     is_gamepad_connected: bool,
@@ -53,6 +44,7 @@ Game_Update :: struct {
 
 Game_Context :: struct {
     running: bool,
+    init_info: Game_Init,
     update_info: Game_Update,
     mouse_position: vec2,
     player_position: vec2f,
@@ -60,31 +52,115 @@ Game_Context :: struct {
     target_direction: enum {None, Up, Down, Left, Right},
     direction: vec2f,
     input_state: util.Input_State,
-    font_atlas: util.Pixmap
+    font_atlas: util.Pixmap,
+    render_group: Render_Group,
+
+    module: struct {
+        dynlib_ptr: dynlib.Library,
+        last_compile_attempt: time.Time,
+        using procs: struct {
+            init: Module_Init_Proc,
+            update_render: Module_Update_Proc,
+            handle_event: Module_Handle_Event_Proc,
+            shutdown: Module_Shutdown_Proc,
+        }
+    }
 }
 
-game: Game_Context
+Module_Init_Proc         :: #type proc(_: ^Game_Context)
+Module_Update_Proc       :: #type proc()
+Module_Handle_Event_Proc :: #type proc(event: util.Window_Event)
+Module_Shutdown_Proc     :: #type proc()
 
-game_init :: proc(game_init: Game_Init) -> bool {
+game: ^Game_Context
+
+game_init :: proc(init_info: Game_Init) -> bool {
+    game = new(Game_Context)
     game.running = true
-    game_init.platform_command_proc(util.Platform_Command{
+    game.init_info = init_info
+    init_info.platform_command_proc(util.Platform_Command{
     	type=.Rename_Window,
     	title="Puckman"
     })
-    game_init.platform_command_proc(util.Platform_Command{
+    init_info.platform_command_proc(util.Platform_Command{
     	type=.Resize_Window,
     	size=vec2{640, 480},
     })
 
     load_ok: bool
-    game.font_atlas, load_ok = file_load.load_png(FONT_PATH)
+    game.font_atlas, load_ok = file_load.load_png(FONT_PATH, init_info.pixel_format)
     assert(load_ok)
+
+    load_module()
+
+    if game.module.init != nil {
+        game.module.init(game)
+    }
 
     return true
 }
 
 game_shutdown :: proc() {
+    if game.module.shutdown != nil {
+        game.module.shutdown()
+    }
+}
 
+game_update_render :: proc(update_info: Game_Update) -> bool {
+    if game == nil {
+        return true
+    }
+	if !game.running {
+		game_shutdown()
+		return false
+	}
+	game.update_info = update_info
+	game.input_state.gamepad = update_info.gamepad_state
+	move_player()
+    render_group_push(&game.render_group, color_black)
+    render_group_push(&game.render_group, Render_Pixmap{pixmap=game.font_atlas})
+    set_direction_from_input()
+    if game.target_direction != nil {
+    	log.debug(game.target_direction)
+    }
+    rect_color := color_orange
+    rect_color.a = 1.0
+    render_group_push(
+        &game.render_group,
+        Render_Fill_Rect{
+        rect=util.rect_to_centered(
+            Rectf{game.position.x, game.position.y, 100, 100}
+        ),
+        color=rect_color,
+    })
+
+
+    if game.module.update_render != nil {
+        game.module.update_render()
+    }
+    game.input_state.transient = {}
+    return game.running
+}
+
+game_handle_event :: proc(window_event: util.Window_Event) {
+	util.set_input_state_from_event(&game.input_state, window_event)
+	#partial switch window_event.type {
+    case .Mouse_Move:
+        game.mouse_position = window_event.vec2
+    case .Key:
+        if window_event.key.pressed {
+            switch window_event.key.keycode{
+            case util.KEY_ESCAPE:
+                game.running = false
+            }
+        }
+    case .Window_Close:
+    	game.running = false
+    }
+
+    if game.module.handle_event != nil {
+        game.module.handle_event(window_event)
+    }
 }
 
 move_player :: proc() {
@@ -142,59 +218,3 @@ set_direction_from_input :: proc() {
 	}
 }
 
-game_update_render :: proc(game_update: Game_Update) -> bool {
-	if !game.running {
-		game_shutdown()
-		return false
-	}
-	game.update_info = game_update
-	game.input_state.gamepad = game_update.gamepad_state
-	move_player()
-	game.position += game.direction
-    // game.position = cast(vec2f)game.mouse_position
-    game.position.x = math.clamp(game.position.x, 0, cast(f32)game_update.framebuffer.w)
-    game.position.y = math.clamp(game.position.y, 0, cast(f32)game_update.framebuffer.h)
-    pixmap_fill(
-        game_update.framebuffer,
-        color_black
-    )
-    blit(game_update.framebuffer, game.font_atlas, {0, 0})
-    for tile in map_ {
-  		tile_rect := Rect {}
-    	tile_color := color_black if tile != 0 else color_blue
-     	// TODO: draw tile rect
-     }
-    }
-    set_direction_from_input()
-    if game.target_direction != nil {
-    	log.debug(game.target_direction)
-    }
-    rect_color := color_orange
-    rect_color.a = 1.0
-    fill_rect(
-        game_update.framebuffer,
-        util.rect_to_centered(
-            Rect{cast(i32)game.position.x, cast(i32)game.position.y, 100, 100}
-        ),
-        rect_color
-    )
-    game.input_state.transient = {}
-    return game.running
-}
-
-game_handle_event :: proc(window_event: util.Window_Event) {
-	util.set_input_state_from_event(&game.input_state, window_event)
-	#partial switch window_event.type {
-    case .Mouse_Move:
-        game.mouse_position = window_event.vec2
-    case .Key:
-        if window_event.key.pressed {
-            switch window_event.key.keycode{
-            case util.KEY_ESCAPE:
-                game.running = false
-            }
-        }
-    case .Window_Close:
-    	game.running = false
-    }
-}

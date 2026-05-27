@@ -1,4 +1,4 @@
-package src
+package main
 
 color_white   :: Color4f { 1.000, 1.000, 1.000, 1.0 }
 color_red     :: Color4f { 1.000, 0.000, 0.000, 1.0 }

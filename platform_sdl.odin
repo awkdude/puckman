@@ -7,7 +7,6 @@ import "core:math"
 import "core:math/bits"
 import sdl "vendor:sdl3"
 import sdl_img "vendor:sdl3/image"
-import "src"
 import "core:thread"
 import "core:os"
 import "core:time"
@@ -15,7 +14,7 @@ import "core:fmt"
 
 frame_tick: time.Tick
 
-when src.PLATFORM_BACKEND == "sdl" {
+when PLATFORM_BACKEND == "sdl" {
 	USE_OPENGL :: false
 
 	sdl_window: ^sdl.Window
@@ -53,24 +52,6 @@ when src.PLATFORM_BACKEND == "sdl" {
 		    sdl.GL_MakeCurrent(sdl_window, gl_context)
 			sdl.GL_SetSwapInterval(1)
 	    }
-	    game_ok := src.game_init(src.Game_Init{
-	        // gl_set_proc_address=sdl_set_proc_address,
-	        set_gamepad_rumble_proc=set_gamepad_rumble_sdl,
-	        platform_command_proc=handle_platform_command_sdl,
-	        get_window_dpi = proc() -> i32 {
-	            // TODO:
-	            return 0
-	        },
-	    })
-	    if !game_ok {
-	        return
-	    }
-	    _ = sdl.StartTextInput(sdl_window)
-
-	    keycode_map = make(map[int]u32, 128)
-	    for pair in sdl_key_to_keycode_mappings {
-	        keycode_map[pair.k] = pair.v
-	    }
         sdl_pixel_format := sdl.GetWindowPixelFormat(sdl_window)
         sdl_pixel_format_details := sdl.GetPixelFormatDetails(sdl_pixel_format)
         pixel_format := util.Pixel_Format {
@@ -92,6 +73,25 @@ when src.PLATFORM_BACKEND == "sdl" {
                 }
             }
         }
+	    game_ok := game_init(Game_Init{
+	        // gl_set_proc_address=sdl_set_proc_address,
+	        set_gamepad_rumble_proc=set_gamepad_rumble_sdl,
+	        platform_command_proc=handle_platform_command_sdl,
+	        get_window_dpi = proc() -> i32 {
+	            // TODO:
+	            return 0
+	        },
+            pixel_format=pixel_format,
+	    })
+	    if !game_ok {
+	        return
+	    }
+	    _ = sdl.StartTextInput(sdl_window)
+
+	    keycode_map = make(map[int]u32, 128)
+	    for pair in sdl_key_to_keycode_mappings {
+	        keycode_map[pair.k] = pair.v
+	    }
         log.debugf(
             "R: %v, G: %v, B: %v, A: %v",
             pixel_format.r,
@@ -113,13 +113,13 @@ when src.PLATFORM_BACKEND == "sdl" {
                 pixel_format=pixel_format,
                 bytes_per_pixel=4,
 	        }
-	        U := src.Game_Update{
+	        U := Game_Update{
 	            window_size={w, h},
 	            gamepad_state=gamepad_state,
 	            is_gamepad_connected=gamepad_ok,
 	            framebuffer=framebuffer,
 	        }
-	        if !src.game_update_render(U) do return
+	        if !game_update_render(U) do return
 	        sdl.UpdateWindowSurface(sdl_window)
 			util.wait_frame_interval(&frame_tick, 16666 * time.Microsecond)
 	        // sdl.GL_SwapWindow(sdl_window)
@@ -227,7 +227,7 @@ when src.PLATFORM_BACKEND == "sdl" {
 										log.debug("Joystick removed")
 	        }
 	        if event, ok := window_event.?; ok {
-	            src.game_handle_event( event)
+	            game_handle_event( event)
 	        }
 	    }
 	// }}}

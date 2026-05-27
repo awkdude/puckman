@@ -1,4 +1,4 @@
-ODIN_TARGET = odin_gl
+TARGET = puckman
 RM := rm
 ifeq ($(OS),Windows_NT)
 	SHELL := cmd.exe
@@ -14,4 +14,4 @@ build_sdl:
 	odin build . -debug --collection:odinlib=../odinlib --define:BACKEND=sdl
 
 clean:
-	$(RM) $(TARGET)* 
+	$(RM) $(TARGET)*  *.obj *.pdb *.exe
