@@ -15,7 +15,7 @@ import stbtt "vendor:stb/truetype"
 import stbi "vendor:stb/image"
 
 
-// TODO: Rename game_ and Game_ to eng_ and Engine_
+// TODO: Rename eng_ and Engine_ to eng_ and Engine_
 // Purpose of this abstraction layer is to hotload "modules" (the actual game code)
 
 vec2f :: util.vec2f
@@ -27,7 +27,7 @@ THUMBSTICK_THRESHOLD :: 0.5
 FONT_PATH :: "resources/DejaVu Sans Mono_512x512x16x16.png"
 
 // Struct to initialize the game
-Game_Init :: struct #all_or_none {
+Engine_Init :: struct #all_or_none {
     // gl_set_proc_address=win.gl_set_proc_address,
     set_gamepad_rumble_proc: proc(weak, strong: f32),
     platform_command_proc: proc(_: util.Platform_Command),
@@ -35,17 +35,17 @@ Game_Init :: struct #all_or_none {
     pixel_format: util.Pixel_Format
 }
 
-Game_Update :: struct #all_or_none {
+Engine_Update :: struct #all_or_none {
 	window_size: vec2,
     gamepad_state: util.Gamepad_State,
     is_gamepad_connected: bool,
     framebuffer: util.Pixmap,
 }
 
-Game_Context :: struct {
+Engine_Context :: struct {
     running: bool,
-    init_info: Game_Init,
-    update_info: Game_Update,
+    init_info: Engine_Init,
+    update_info: Engine_Update,
     mouse_position: vec2,
     player_position: vec2f,
     position: vec2f,
@@ -67,15 +67,15 @@ Game_Context :: struct {
     }
 }
 
-Module_Init_Proc         :: #type proc(_: ^Game_Context)
+Module_Init_Proc         :: #type proc(_: ^Engine_Context)
 Module_Update_Proc       :: #type proc()
 Module_Handle_Event_Proc :: #type proc(event: util.Window_Event)
 Module_Shutdown_Proc     :: #type proc()
 
-game: ^Game_Context
+game: ^Engine_Context
 
-game_init :: proc(init_info: Game_Init) -> bool {
-    game = new(Game_Context)
+eng_init :: proc(init_info: Engine_Init) -> bool {
+    game = new(Engine_Context)
     game.running = true
     game.init_info = init_info
     init_info.platform_command_proc(util.Platform_Command{
@@ -100,24 +100,24 @@ game_init :: proc(init_info: Game_Init) -> bool {
     return true
 }
 
-game_shutdown :: proc() {
+eng_shutdown :: proc() {
     if game.module.shutdown != nil {
         game.module.shutdown()
     }
 }
 
-game_update_render :: proc(update_info: Game_Update) -> bool {
+eng_update_render :: proc(update_info: Engine_Update) -> bool {
     if game == nil {
         return true
     }
 	if !game.running {
-		game_shutdown()
+		eng_shutdown()
 		return false
 	}
 	game.update_info = update_info
 	game.input_state.gamepad = update_info.gamepad_state
 	move_player()
-    render_group_push(&game.render_group, color_black)
+    render_group_push(&game.render_group, color_yellow)
     render_group_push(&game.render_group, Render_Pixmap{pixmap=game.font_atlas})
     set_direction_from_input()
     if game.target_direction != nil {
@@ -138,11 +138,12 @@ game_update_render :: proc(update_info: Game_Update) -> bool {
     if game.module.update_render != nil {
         game.module.update_render()
     }
+    render_group_to_output(&game.render_group, game.update_info.framebuffer)
     game.input_state.transient = {}
     return game.running
 }
 
-game_handle_event :: proc(window_event: util.Window_Event) {
+eng_handle_event :: proc(window_event: util.Window_Event) {
 	util.set_input_state_from_event(&game.input_state, window_event)
 	#partial switch window_event.type {
     case .Mouse_Move:

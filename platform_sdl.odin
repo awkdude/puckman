@@ -1,5 +1,6 @@
 package main
 
+import "odinlib:file_load"
 import "core:log"
 import "core:strings"
 import "odinlib:util"
@@ -10,12 +11,13 @@ import sdl_img "vendor:sdl3/image"
 import "core:thread"
 import "core:os"
 import "core:time"
+import "base:runtime"
 import "core:fmt"
-
-frame_tick: time.Tick
 
 when PLATFORM_BACKEND == "sdl" {
 	USE_OPENGL :: false
+	global_context: runtime.Context
+	frame_tick: time.Tick
 
 	sdl_window: ^sdl.Window
 	sdl_gamepad: ^sdl.Gamepad
@@ -30,9 +32,10 @@ when PLATFORM_BACKEND == "sdl" {
 	}
 
 	main :: proc() {
-	  context.logger = log.create_console_logger()
+        context.logger = log.create_console_logger()
 	    context.logger.options -= {.Date}
-	    if !sdl.Init({.VIDEO, .EVENTS, .GAMEPAD}) {
+        global_context = context
+	    if !sdl.Init({.VIDEO, .AUDIO, .EVENTS, .GAMEPAD}) {
 	        log.panic("Could not init SDL")
 	    }
 	    sdl_window = sdl.CreateWindow(
@@ -73,7 +76,18 @@ when PLATFORM_BACKEND == "sdl" {
                 }
             }
         }
-	    game_ok := game_init(Game_Init{
+        desired_audio_spec := sdl.AudioSpec {
+            freq=44100,
+            format=.S16LE,
+            channels=2,
+        }
+        audio_spec: sdl.AudioSpec
+        // wav_audio_buf, is_wav_loaded := file_load.load_wav("resources/StartupPowerMac.wav")
+        // assert(is_wav_loaded)
+        audio_stream := sdl.OpenAudioDeviceStream(sdl.AUDIO_DEVICE_DEFAULT_PLAYBACK, &desired_audio_spec, nil, nil)
+        sdl.ResumeAudioStreamDevice(audio_stream)
+        if false do os.exit(0)
+	    eng_ok := eng_init(Engine_Init{
 	        // gl_set_proc_address=sdl_set_proc_address,
 	        set_gamepad_rumble_proc=set_gamepad_rumble_sdl,
 	        platform_command_proc=handle_platform_command_sdl,
@@ -83,7 +97,7 @@ when PLATFORM_BACKEND == "sdl" {
 	        },
             pixel_format=pixel_format,
 	    })
-	    if !game_ok {
+	    if !eng_ok {
 	        return
 	    }
 	    _ = sdl.StartTextInput(sdl_window)
@@ -113,13 +127,13 @@ when PLATFORM_BACKEND == "sdl" {
                 pixel_format=pixel_format,
                 bytes_per_pixel=4,
 	        }
-	        U := Game_Update{
+	        U := Engine_Update{
 	            window_size={w, h},
 	            gamepad_state=gamepad_state,
 	            is_gamepad_connected=gamepad_ok,
 	            framebuffer=framebuffer,
 	        }
-	        if !game_update_render(U) do return
+	        if !eng_update_render(U) do return
 	        sdl.UpdateWindowSurface(sdl_window)
 			util.wait_frame_interval(&frame_tick, 16666 * time.Microsecond)
 	        // sdl.GL_SwapWindow(sdl_window)
@@ -227,7 +241,7 @@ when PLATFORM_BACKEND == "sdl" {
 										log.debug("Joystick removed")
 	        }
 	        if event, ok := window_event.?; ok {
-	            game_handle_event( event)
+	            eng_handle_event( event)
 	        }
 	    }
 	// }}}
@@ -369,6 +383,7 @@ when PLATFORM_BACKEND == "sdl" {
 	    }
 	    // }}}
 	    return gamepad_state, true
+        // }}}
 	}
 
 	// NOTE: A-Z, 0-9, F1-F12 not needed
@@ -383,6 +398,10 @@ when PLATFORM_BACKEND == "sdl" {
 	    {sdl.K_LSHIFT, util.KEY_LSHIFT},
 	    {sdl.K_PAGEUP, util.KEY_PAGEUP},
 	    {sdl.K_PAGEDOWN, util.KEY_PAGEDOWN},
+		{sdl.K_F1, util.KEY_F1},
+		{sdl.K_F2, util.KEY_F2},
+		{sdl.K_F3, util.KEY_F3},
+		{sdl.K_F4, util.KEY_F4},
 	}
 
 	translate_sdl_key_to_keycode :: proc(sdl_key: u32) -> u32 {

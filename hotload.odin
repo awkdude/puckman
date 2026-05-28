@@ -6,9 +6,21 @@ import "core:log"
 import "core:time"
 import "core:dynlib"
 
-MODULE_PATH    :: "src/dumb"
+MODULE_DIRPATH :: "game"
 // TODO: use when
-MODULE_DYNLIB_FILENAME :: "dumb_mod.dll"
+when ODIN_OS == .Windows {
+	MODULE_DYNLIB_FILENAME :: MODULE_DIRPATH + ".dll"
+} else when ODIN_OS == .Linux {
+	MODULE_DYNLIB_FILENAME :: MODULE_DIRPATH + ".so"
+}
+
+when ODIN_OS == .Windows {
+	ARG_BUILD_MODE :: "-build-mode:dll"
+} else when ODIN_OS == .Linux {
+	ARG_BUILD_MODE :: "-build-mode:shared"
+}
+
+ARG_OUTPUT :: "-out:" + MODULE_DYNLIB_FILENAME
 
 // Returns true if a source file in the module's package directory is more up to date
 // than dynlib.
@@ -16,9 +28,9 @@ MODULE_DYNLIB_FILENAME :: "dumb_mod.dll"
 module_needs_update :: proc() -> bool {
     module_dynlib_time, err := os.modification_time_by_path(MODULE_DYNLIB_FILENAME)
     if err != nil {
-        return false
+        return true
     }
-    walker := os.walker_create(MODULE_PATH)
+    walker := os.walker_create(MODULE_DIRPATH)
     defer os.walker_destroy(&walker)
     for info in os.walker_walk(&walker) {
         _ = os.walker_error(&walker) or_break
@@ -32,16 +44,15 @@ module_needs_update :: proc() -> bool {
 
 
 compile_module :: proc() -> bool {
-    ARG_BUILD_MODE :: "--build-mode:dll"
-    ARG_OUTPUT     :: "-out:" + MODULE_DYNLIB_FILENAME
 	compile_commmad := []string {
         "odin",
         "build",
-        "src/dumb",
+        MODULE_DIRPATH,
         "-debug",
         ARG_BUILD_MODE,
-        "--out:" + MODULE_DYNLIB_FILENAME,
-        "--collection:odinlib=../odinlib",
+        ARG_OUTPUT,
+        "-collection:odinlib=../odinlib",
+        "-define:BACKEND=none"
 	}
 
 	cwd, _ := os.get_working_directory(context.allocator)
@@ -63,16 +74,17 @@ compile_module :: proc() -> bool {
 }
 
 load_module :: proc() {
-    if game.module.procs.shutdown != nil {
-        game.module.procs.shutdown()
-    }
-    dynlib.unload_library(game.module.dynlib_ptr)
+	if game.module.dynlib_ptr != nil {
+		if game.module.procs.shutdown != nil {
+	        game.module.procs.shutdown()
+	    }
+	    dynlib.unload_library(game.module.dynlib_ptr)
+	}
     game.module = {}
     if module_needs_update() {
-        compile_module() 
+        compile_module()
         time.sleep(500 * time.Millisecond)
     }
-
 
 	did_load: bool
 	game.module.dynlib_ptr, did_load = dynlib.load_library(MODULE_DYNLIB_FILENAME)
@@ -84,7 +96,7 @@ load_module :: proc() {
         if init_proc != nil ||
             update_render_proc != nil ||
             handle_event_proc != nil ||
-            shutdown_proc != nil 
+            shutdown_proc != nil
         {
             game.module.procs =  {
                 init=cast(Module_Init_Proc)init_proc,

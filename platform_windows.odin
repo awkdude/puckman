@@ -23,6 +23,7 @@ import "odinlib:util"
 when PLATFORM_BACKEND == "native" {
 
 USE_OPENGL :: false
+frame_tick: time.Tick
 vec2 :: util.vec2
 previous_frame_time: time.Tick
 window_handle: win.HWND
@@ -154,16 +155,17 @@ main :: proc() {
     // }}}
 
     update_framebuffer_win32()
-    game_ok := game_init(Game_Init{
+    eng_ok := eng_init(Engine_Init{
         // gl_set_proc_address=win.gl_set_proc_address,
         set_gamepad_rumble_proc=set_gamepad_rumble_xinput,
         platform_command_proc=handle_platform_command_win,
         get_window_dpi = proc() -> i32 {
             return cast(i32)win.GetDpiForWindow(window_handle)
         },
+        pixel_format=util.DEFAULT_PIXEL_FORMAT,
     })
 
-    if !game_ok {
+    if !eng_ok {
         return
     }
 
@@ -213,7 +215,7 @@ main :: proc() {
         // }
         // }}}
         gamepad_state, is_connected := get_gamepad_state_xinput()
-        game_update := Game_Update{
+        eng_update := Engine_Update{
                 window_size={
                 client_rect.right-client_rect.left,
                 client_rect.bottom-client_rect.top,
@@ -222,7 +224,7 @@ main :: proc() {
             is_gamepad_connected=is_connected,
             framebuffer=framebuffer_pixmap,
         }
-        if !game_update_render(game_update) do return
+        if !eng_update_render(eng_update) do return
 		device_context := win.GetDC(window_handle)
 		win.BitBlt(
 			device_context,
@@ -504,7 +506,7 @@ window_proc :: proc "stdcall" (
     if running {
         if event, ok := window_event.?; ok {
             event.source_window = cast(util.Window_ID)window_handle
-            game_handle_event(event)
+            eng_handle_event(event)
         }
     }
 
