@@ -97,7 +97,7 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     pixels := cast([^]ColorU32)game.texture.pixels
     for p in 0..<game.texture.w * game.texture.h {
     	c_4b := unpack_color_4b(pixels[p], game.texture.pixel_format)
-     	c_4b.a = 0x60
+     	// c_4b.a = 0x60
       	pixels[p] = pack_color(c_4b, game.texture.pixel_format)
     }
     assert(load_ok)
@@ -139,20 +139,24 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
     if game.target_direction != nil {
     	log.debug(game.target_direction)
     }
-    rect_color := color_white
-    rect_color.a =  util.time_sin()
+    rect_color := color_red
+    // rect_color.a =  util.time_sin()
     scale: f32 = 400.0 + 100*util.time_sin()
     d := time.duration_seconds(time.tick_since({}))
     x: f32 = cast(f32)math.cos(-math.TAU * d)
     y: f32 = cast(f32)math.sin(-math.TAU * d)
-    b := vec2f{x,y}
+    b := vec2f{1.0, 0} // vec2f{x,y}
 
+    center := cast(vec2f)vec2{game.update_info.framebuffer.w/2, game.update_info.framebuffer.h/2}
+    mouse_pos := cast(vec2f)game.mouse_position
     render_group_push(
         &game.render_group,
         Render_Coord_System{
-        	origin=cast(vec2f)game.mouse_position,
+        	origin=cast(vec2f)game.mouse_position + {0, scale},
         	basis_x=scale*b,
-        	basis_y=scale*util.perp(b),
+        	basis_y=-scale*util.perp(b),
+         	// basis_x=vec2f{mouse_pos.x, 0} - vec2f{center.x, 0},
+         	// basis_y=vec2f{0, mouse_pos.y} - vec2f{0, center.y},
         	color=rect_color,
          	texture=game.texture,
         }

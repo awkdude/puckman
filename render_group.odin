@@ -2,12 +2,29 @@ package main
 
 import "core:c"
 import "core:math"
+import "core:log"
 import "core:math/linalg"
 import "odinlib:util"
 
 Rectf :: util.Rectf
 
 perp :: util.perp
+
+white_texture_data := []ColorU32 {
+	0xffffffff,
+	0xffffffff,
+	0xffffffff,
+	0xffffffff,
+}
+
+WHITE_TEXTURE := Pixmap {
+	pixels=raw_data(white_texture_data),
+	w=2,
+	h=2,
+	pitch=8,
+	bytes_per_pixel=4,
+	pixel_format=util.DEFAULT_PIXEL_FORMAT,
+}
 
 // Queue of rendering commands
 Render_Group :: struct {
@@ -129,14 +146,21 @@ new_draw :: proc(
 	pixmap: Pixmap,
 	origin, basis_x, basis_y: vec2f,
 	color: Color4f,
-	texture: Pixmap)
+	_texture: Maybe(Pixmap) = nil)
 {
+	texture: Pixmap
+	if tex, ok := _texture.?; ok {
+		texture = tex
+	} else {
+		texture = WHITE_TEXTURE
+		texture.pixel_format = pixmap.pixel_format
+	}
 	c_u32 := pack_color(color, pixmap.pixel_format)
 	pixels := cast([^]ColorU32)pixmap.pixels
 	v0 := origin
-	v1 := origin + basis_x
-	v2 := origin + basis_y
-	v3 := origin + basis_x + basis_y
+	v1 := origin + basis_y
+	v2 := origin + basis_x + basis_y
+	v3 := origin + basis_x
 	p_min_x := cast(i32)min(v0.x, v1.x, v2.x, v3.x)
 	p_min_y := cast(i32)min(v0.y, v1.y, v2.y, v3.y)
 	p_max_x := cast(i32)max(v0.x, v1.x, v2.x, v3.x)
@@ -151,7 +175,15 @@ new_draw :: proc(
 	if p_max_x < 0 || p_max_y < 0 {
 		return
 	}
-
+	// Basically determines if "sign" of quad winding order
+	// NOTE: Shoelace formula: Need to actually understand
+	sign := -math.sign(
+		(v0.x * v1.y - v0.y * v1.x) +
+	 	(v1.x * v2.y - v2.y * v2.x) +
+		(v2.x * v3.y - v2.y * v3.x) +
+	 	(v3.x * v0.y - v3.y * v0.x)
+	)
+	log.debug(sign)
 	v_min := origin
 	v_max := origin + basis_x + basis_y
 	inv_x_length_sq := 1.0 / linalg.length2(basis_x)
@@ -162,10 +194,10 @@ new_draw :: proc(
 			color := color
 			p := cast(vec2f) vec2{x, y}
 			dp := p - origin
-			e0 := linalg.dot(dp, -perp(basis_x))
-			e1 := linalg.dot(dp - basis_x, -perp(basis_y))
-			e2 := linalg.dot(dp - basis_x - basis_y, perp(basis_x))
-			e3 := linalg.dot(dp - basis_y, perp(basis_y))
+			e0 := sign * linalg.dot(dp, -perp(basis_x))
+			e1 := sign * linalg.dot(dp - basis_x, -perp(basis_y))
+			e2 := sign * linalg.dot(dp - basis_x - basis_y, perp(basis_x))
+			e3 := sign * linalg.dot(dp - basis_y, perp(basis_y))
 			if e0 < 0 && e1 < 0 && e2 < 0 && e3 < 0 {
 				dst_c := unpack_color_4f(pixels[y * pixmap.w + x], pixmap.pixel_format)
 				// NOTE: may need to clamp
@@ -177,8 +209,10 @@ new_draw :: proc(
 				blended_c := alpha_blend(color, dst_c)
 				pixels[y * pixmap.w + x] = pack_color(blended_c, pixmap.pixel_format)
 				row_fill_count += 1
-			} else if row_fill_count > 0 {
-				break
+			} else{
+				if row_fill_count > 0 {
+						break
+				}
 			}
 		}
 	}
