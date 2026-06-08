@@ -25,7 +25,6 @@ when PLATFORM_BACKEND == "native" {
 USE_OPENGL :: false
 frame_tick: time.Tick
 vec2 :: util.vec2
-previous_frame_time: time.Tick
 window_handle: win.HWND
 running: bool
 global_context: runtime.Context
@@ -244,6 +243,7 @@ main :: proc() {
         // win.ReleaseDC(window_handle, device_context)
     }
 }
+
 update_framebuffer_win32 :: proc() {
 	// {{{
 	rect: win.RECT
@@ -513,6 +513,7 @@ window_proc :: proc "stdcall" (
     return exit_code
 // }}}
 }
+
 handle_platform_command_win :: proc(command: util.Platform_Command) {
     // {{{
     #partial switch command.type {
@@ -568,6 +569,7 @@ handle_platform_command_win :: proc(command: util.Platform_Command) {
     }
  // }}}
 }
+
 set_gamepad_rumble_xinput :: proc(weak, strong: f32) {
     // {{{
     weak_ := cast(u16)(math.clamp(weak, 0.0, 1.0) * cast(f32)bits.U16_MAX)
@@ -578,6 +580,7 @@ set_gamepad_rumble_xinput :: proc(weak, strong: f32) {
     })
     // }}}
 }
+
 get_gamepad_state_xinput :: proc() -> (util.Gamepad_State, bool) {
 // {{{
     @(static) old_packet_number: win.DWORD

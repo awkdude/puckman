@@ -93,9 +93,9 @@ load_module :: proc() {
         update_render_proc := dynlib.symbol_address(game.module.dynlib_ptr, "module_update_render")
 		handle_event_proc := dynlib.symbol_address(game.module.dynlib_ptr, "module_handle_event")
 		shutdown_proc := dynlib.symbol_address(game.module.dynlib_ptr, "module_shutdown")
-        if init_proc != nil ||
-            update_render_proc != nil ||
-            handle_event_proc != nil ||
+        if init_proc != nil &&
+            update_render_proc != nil &&
+            handle_event_proc != nil &&
             shutdown_proc != nil
         {
             game.module.procs =  {
@@ -104,6 +104,8 @@ load_module :: proc() {
                 handle_event=cast(Module_Handle_Event_Proc)handle_event_proc,
                 shutdown=cast(Module_Shutdown_Proc)shutdown_proc,
             }
+        } else {
+        	// TODO: Handle if all required procs weren't loaded
         }
 	}
 }

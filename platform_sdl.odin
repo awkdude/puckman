@@ -76,17 +76,38 @@ when PLATFORM_BACKEND == "sdl" {
                 }
             }
         }
-        desired_audio_spec := sdl.AudioSpec {
-            freq=44100,
-            format=.S16LE,
-            channels=2,
+        when false {
+            desired_audio_spec := sdl.AudioSpec {
+                freq=44100,
+                format=.S16LE,
+                channels=2,
+            }
+            audio_spec: sdl.AudioSpec
+            audio_stream := sdl.OpenAudioDeviceStream(
+                sdl.AUDIO_DEVICE_DEFAULT_PLAYBACK,
+                &desired_audio_spec, 
+                nil,
+                nil
+            )
+            sdl.GetAudioStreamFormat(audio_stream, nil, &audio_spec)
+            log.debug(audio_spec)
+            wav_audio_buf, is_wav_loaded := file_load.load_wav(
+                "resources/StartupPowerMac.wav",
+                target_spec=util.Audio_Spec{
+                    num_channels=audio_spec.channels,
+                    sample_rate=audio_spec.freq,
+                    bit_format=audio_format_from_sdl(audio_spec.format), // TODO: Make bit format conv proc
+                }
+            )
+            assert(is_wav_loaded)
+            sdl.ResumeAudioStreamDevice(audio_stream)
+            sdl.PutAudioStreamData(
+                audio_stream,
+                raw_data(wav_audio_buf.data),
+                cast(i32)len(wav_audio_buf.data)
+            )
+            if false do os.exit(0)
         }
-        audio_spec: sdl.AudioSpec
-        // wav_audio_buf, is_wav_loaded := file_load.load_wav("resources/StartupPowerMac.wav")
-        // assert(is_wav_loaded)
-        audio_stream := sdl.OpenAudioDeviceStream(sdl.AUDIO_DEVICE_DEFAULT_PLAYBACK, &desired_audio_spec, nil, nil)
-        sdl.ResumeAudioStreamDevice(audio_stream)
-        if false do os.exit(0)
 	    eng_ok := eng_init(Engine_Init{
 	        // gl_set_proc_address=sdl_set_proc_address,
 	        set_gamepad_rumble_proc=set_gamepad_rumble_sdl,
@@ -149,7 +170,6 @@ when PLATFORM_BACKEND == "sdl" {
 	}
 
 	handle_events :: proc() {
-	// {{{
 	    sdl_event: sdl.Event
 	    window_event: Maybe(util.Window_Event)
 	    drop_files: [dynamic]string
@@ -235,20 +255,18 @@ when PLATFORM_BACKEND == "sdl" {
 	                type=.Drop,
 	                files=drop_files[:],
 	            }
-									case .JOYSTICK_ADDED:
-										log.debug("Joystick added")
-									case .JOYSTICK_REMOVED:
-										log.debug("Joystick removed")
+			case .JOYSTICK_ADDED:
+				log.debug("Joystick added")
+			case .JOYSTICK_REMOVED:
+				log.debug("Joystick removed")
 	        }
 	        if event, ok := window_event.?; ok {
 	            eng_handle_event( event)
 	        }
 	    }
-	// }}}
 	}
 
 	handle_platform_command_sdl :: proc(command: util.Platform_Command) {
-	// {{{
 	    #partial switch command.type {
 	    case .Resize_Window:
 	        if size, ok := command.size.?; ok {
@@ -267,11 +285,9 @@ when PLATFORM_BACKEND == "sdl" {
 	    case .Rename_Window:
 	        sdl.SetWindowTitle(sdl_window, strings.unsafe_string_to_cstring(command.title))
 	    }
-	// }}}
 	}
 
 	get_gamepad_state_sdl :: proc() -> (util.Gamepad_State, bool) {
-		// {{{
 	    if sdl_gamepad == nil {
 	        if sdl.HasGamepad() {
 	            count: i32
@@ -286,10 +302,15 @@ when PLATFORM_BACKEND == "sdl" {
 	                sdl_gamepad = gamepad
 	            }
 	        }
-	    }
-	    if sdl_gamepad == nil {
-	        return {}, false
-	    }
+		    if sdl_gamepad == nil {
+		        return {}, false
+		    }
+	    } else {
+			if !sdl.GamepadConnected(sdl_gamepad) {
+				sdl_gamepad = nil
+				return {}, false
+			}
+		}
 	    gamepad_state := util.Gamepad_State {
 	        axes={
 	            .LEFT_X=util.normalize_to_range(
@@ -367,7 +388,6 @@ when PLATFORM_BACKEND == "sdl" {
 	    if sdl.GetGamepadButton(sdl_gamepad, .RIGHT_SHOULDER) {
 	        gamepad_state.buttons += {.BUMPER_RIGHT}
 	    }
-	    // }}}
 	    // hats {{{
 	    if sdl.GetGamepadButton(sdl_gamepad, .DPAD_UP) {
 	        gamepad_state.hat += {.UP}
@@ -381,9 +401,7 @@ when PLATFORM_BACKEND == "sdl" {
 	    if sdl.GetGamepadButton(sdl_gamepad, .DPAD_DOWN) {
 	        gamepad_state.hat += {.DOWN}
 	    }
-	    // }}}
 	    return gamepad_state, true
-        // }}}
 	}
 
 	// NOTE: A-Z, 0-9, F1-F12 not needed
@@ -405,7 +423,6 @@ when PLATFORM_BACKEND == "sdl" {
 	}
 
 	translate_sdl_key_to_keycode :: proc(sdl_key: u32) -> u32 {
-	// {{{
 	    switch sdl_key {
 	    case sdl.K_A..=sdl.K_Z:
 	        return util.KEY_A + (sdl_key - cast(u32)sdl.K_A)
@@ -437,6 +454,17 @@ when PLATFORM_BACKEND == "sdl" {
 	    // case sdl.K_PAGEDOWN:
 	    //     return util.KEY_PAGEDOWN
 	    // }
-	// }}}
 	}
+    audio_format_from_sdl :: proc "contextless" (sdl_audio_format: sdl.AudioFormat) -> util.Audio_Format 
+    {
+        #partial switch sdl_audio_format {
+        case .U8:
+            return .U8
+        case .S16LE:
+            return .S16
+        case .F32LE:
+            return .F32_LE
+        }
+        return .U8
+    }
 }

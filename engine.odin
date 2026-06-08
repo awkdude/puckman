@@ -52,8 +52,11 @@ Engine_Context :: struct {
     target_direction: enum {None, Up, Down, Left, Right},
     direction: vec2f,
     input_state: util.Input_State,
-    font_atlas: util.Pixmap,
+    font_atlas, texture: util.Pixmap,
     render_group: Render_Group,
+    last_frame_tick: time.Tick,
+    lag: time.Duration,
+    rects_collide: bool,
 
     module: struct {
         dynlib_ptr: dynlib.Library,
@@ -90,6 +93,14 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     load_ok: bool
     game.font_atlas, load_ok = file_load.load_png(FONT_PATH, init_info.pixel_format)
     assert(load_ok)
+    game.texture, load_ok = file_load.load_png("resources/textures/rgb_diffuse.png", init_info.pixel_format)
+    pixels := cast([^]ColorU32)game.texture.pixels
+    for p in 0..<game.texture.w * game.texture.h {
+    	c_4b := unpack_color_4b(pixels[p], game.texture.pixel_format)
+     	c_4b.a = 0x60
+      	pixels[p] = pack_color(c_4b, game.texture.pixel_format)
+    }
+    assert(load_ok)
 
     load_module()
 
@@ -116,26 +127,48 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
 	}
 	game.update_info = update_info
 	game.input_state.gamepad = update_info.gamepad_state
+
+	now := time.tick_now()
+	diff := time.tick_diff(game.last_frame_tick, now)
+	game.lag += diff
+	game.last_frame_tick = now
 	move_player()
-    render_group_push(&game.render_group, color_yellow)
+    render_group_push(&game.render_group, color_green if game.rects_collide else color_yellow)
     render_group_push(&game.render_group, Render_Pixmap{pixmap=game.font_atlas})
     set_direction_from_input()
     if game.target_direction != nil {
     	log.debug(game.target_direction)
     }
-    rect_color := color_orange
-    rect_color.a = 1.0
+    rect_color := color_white
+    rect_color.a =  util.time_sin()
+    scale: f32 = 400.0 + 100*util.time_sin()
+    d := time.duration_seconds(time.tick_since({}))
+    x: f32 = cast(f32)math.cos(-math.TAU * d)
+    y: f32 = cast(f32)math.sin(-math.TAU * d)
+    b := vec2f{x,y}
+
     render_group_push(
         &game.render_group,
-        Render_Fill_Rect{
-        rect=util.rect_to_centered(
-            Rectf{game.position.x, game.position.y, 100, 100}
-        ),
-        color=rect_color,
-    })
+        Render_Coord_System{
+        	origin=cast(vec2f)game.mouse_position,
+        	basis_x=scale*b,
+        	basis_y=scale*util.perp(b),
+        	color=rect_color,
+         	texture=game.texture,
+        }
+    )
 
+    render_group_push(
+        &game.render_group,
+        Render_Line{
+        	start={},
+        	end=cast(vec2f)game.mouse_position,
+         	line_width= 5,
+        	color=color_red,
+        }
+    )
 
-    if game.module.update_render != nil {
+    if false && game.module.update_render != nil {
         game.module.update_render()
     }
     render_group_to_output(&game.render_group, game.update_info.framebuffer)
@@ -218,4 +251,3 @@ set_direction_from_input :: proc() {
 		}
 	}
 }
-

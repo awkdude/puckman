@@ -10,12 +10,12 @@ Color4f :: util.Color4f
 ColorU32 :: util.ColorU32
 Color4b :: util.Color4b
 Pixmap :: util.Pixmap
-pack_color :: util.pack_color_4f
+pack_color :: util.pack_color
 unpack_color_4f :: util.unpack_color_4f
 unpack_color_4b :: util.unpack_color_4b
 
 
-alpha_blend :: proc "contextless" (top, bottom: Color4f) -> Color4f {
+alpha_blend :: #force_inline proc "contextless" (top, bottom: Color4f) -> Color4f {
     one_minus_src_alpha := 1.0 - top.a
     final_c := top * top.a + bottom * one_minus_src_alpha
     final_c.a = 1.0
