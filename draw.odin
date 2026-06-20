@@ -22,19 +22,21 @@ alpha_blend :: #force_inline proc "contextless" (top, bottom: Color4f) -> Color4
     return final_c
 }
 
-blit :: proc(
+// TODO: replace off with dst_rect
+// TODO: use integer scaling. currently sampling looks horrible!
+blit_scaled :: proc(
     dst_pixmap, src_pixmap: Pixmap,
     off: vec2,
-    dst_rect: ^Rectf = nil,
-    src_rect: ^Rectf = nil)
+    _src_rect: Maybe(Rectf) = nil,
+    _dst_rect: Maybe(Rectf) = nil) #no_bounds_check
 {
 	log.assertf(
 		dst_pixmap.bytes_per_pixel == src_pixmap.bytes_per_pixel,
 		"Dst bpp: %v, Src bpp: %v",
 		dst_pixmap.bytes_per_pixel,
 		src_pixmap.bytes_per_pixel
-	 )
-	assert( dst_pixmap.pixel_format == src_pixmap.pixel_format )
+	)
+	assert(dst_pixmap.pixel_format == src_pixmap.pixel_format)
 	src_pixels := cast([^]ColorU32)src_pixmap.pixels
     dst_pixels := cast([^]ColorU32)dst_pixmap.pixels
     dst_min_x: i32 = off.x
@@ -43,10 +45,12 @@ blit :: proc(
     dst_max_y := off.y + src_pixmap.h
     src_min_y: i32 = 0
     src_max_y := src_min_y + src_pixmap.h
-    if dst_rect != nil {
-        // TODO:
-    }
-    if src_rect != nil {
+    dst_rect := _dst_rect.?
+    dst_min_x = off.x
+    dst_max_x = off.x + cast(i32)dst_rect.w // src_pixmap.w
+    dst_min_y = off.y
+    dst_max_y = off.y + cast(i32)dst_rect.h // src_pixmap.h
+    if src_rect, ok := _src_rect.?; ok {
         // TODO:
     }
     if off.y < 0 {
@@ -69,10 +73,97 @@ blit :: proc(
 
     row_d := dst_min_y * dst_pixmap.w
     row_s := src_min_y * src_pixmap.w
+    src_inc_x := (f32)(src_max_x - src_min_x) / (f32)(dst_max_x - dst_min_x)
+    src_inc_y := (f32)(src_max_y - src_min_y) / (f32)(dst_max_y - dst_min_y)
+    src_y := cast(f32)src_min_y
+    for dst_y in dst_min_y..<dst_max_y {
+        dst_x := dst_min_x
+        src_x := cast(f32)src_min_x
+        for dst_x in dst_min_x..<dst_max_x {
+            // src_c := src_pixels[row_s + src_x]
+            src_c := src_pixels[cast(i32)src_y * src_pixmap.w + cast(i32)src_x]
+            src_alpha := (src_c >> src_pixmap.pixel_format.a) & 0xff
+            if src_alpha == 255 {
+                dst_pixels[row_d + dst_x] = src_c
+            } else if src_alpha > 0 {
+                dst_c := dst_pixels[row_d + dst_x]
+                blended_c := alpha_blend(
+                    unpack_color_4f(src_c, src_pixmap.pixel_format),
+                    unpack_color_4f(dst_c, dst_pixmap.pixel_format)
+                )
+                dst_pixels[row_d + dst_x] = pack_color(blended_c, dst_pixmap.pixel_format)
+            }
+            src_x += src_inc_x
+        }
+        row_d += dst_pixmap.w
+        src_y += src_inc_y
+        // row_s += src_pixmap.w
+    }
+}
+
+// TODO: Replace floating point with integer
+blit :: proc(
+    dst_pixmap, src_pixmap: Pixmap,
+    off: vec2,
+    _src_rect: Maybe(Rectf) = nil,
+    flip: [2]bool = {false, false}) #no_bounds_check
+{
+	log.assertf(
+		dst_pixmap.bytes_per_pixel == src_pixmap.bytes_per_pixel,
+		"Dst bpp: %v, Src bpp: %v",
+		dst_pixmap.bytes_per_pixel,
+		src_pixmap.bytes_per_pixel
+	)
+	assert( dst_pixmap.pixel_format == src_pixmap.pixel_format )
+	src_pixels := cast([^]ColorU32)src_pixmap.pixels
+    dst_pixels := cast([^]ColorU32)dst_pixmap.pixels
+    dst_min_x: i32 = off.x
+    dst_max_x := off.x + src_pixmap.w
+    dst_min_y: i32 = off.y
+    dst_max_y := off.y + src_pixmap.h
+    src_min_y: i32 = 0
+    src_max_y := src_min_y + src_pixmap.h
+    src_min_x: i32 = 0
+    src_max_x := src_pixmap.w
+    // if dst_rect, ok := _dst_rect.?; ok {
+    //     // TODO:
+    // }
+    if src_rect, ok := _src_rect.?; ok {
+        src_min_x = cast(i32)src_rect.x
+        src_max_x = cast(i32)(src_rect.x + src_rect.w)
+        dst_max_x = cast(i32)(cast(f32)off.x + src_rect.w)
+        src_min_y = cast(i32)src_rect.y
+        src_max_y = cast(i32)(src_rect.y + src_rect.h)
+        dst_max_y = cast(i32)(cast(f32)off.y + src_rect.h)
+    }
+    // FIXME: Adjust if src_rect
+    if off.y < 0 {
+        dst_min_y = 0
+        src_min_y = -off.y
+    } else if dst_max_y > dst_pixmap.h {
+        dst_max_y = dst_pixmap.h
+        src_max_y = dst_max_y - off.y
+    }
+
+    if off.x < 0 {
+        dst_min_x = 0
+        src_min_x = -off.x
+    } else if dst_max_x > dst_pixmap.w {
+        dst_max_x = dst_pixmap.w
+        src_max_x = dst_max_x - off.x
+    }
+    // NOTE: May be off by 1 error
+    flip_offset_x := (src_pixmap.w - 1) if flip.x else 0
+    flip_sign_x: i32 = -1 if flip.x else 1
+    flip_sign_y: i32 = -1 if flip.y else 1
+    row_d := dst_min_y * dst_pixmap.w
+    row_s := (src_max_y - 1 if flip.y else src_min_y) * src_pixmap.w
     for src_y in src_min_y..<src_max_y {
         dst_x := dst_min_x
         for src_x in src_min_x..<src_max_x {
-            src_c := src_pixels[row_s + src_x]
+	        // FIXME:
+	       	src_xx := flip_offset_x + (src_x * flip_sign_x)
+            src_c := src_pixels[row_s + src_xx]
             src_alpha := (src_c >> src_pixmap.pixel_format.a) & 0xff
             if src_alpha == 255 {
                 dst_pixels[row_d + dst_x] = src_c
@@ -87,14 +178,8 @@ blit :: proc(
             dst_x += 1
         }
         row_d += dst_pixmap.w
-        row_s += src_pixmap.w
+        row_s += flip_sign_y * src_pixmap.w
     }
-}
-
-edge_cross :: proc "contextless" (p: vec2f, p1, p2: vec2f) -> f32 {
-	ab := p2 - p1
-	ap := p - p1
-	return linalg.vector_cross2(ab, ap)
 }
 
 pixmap_fill :: proc "contextless" (pixmap: Pixmap, color: Color4f) {
@@ -104,7 +189,8 @@ pixmap_fill :: proc "contextless" (pixmap: Pixmap, color: Color4f) {
     slice.fill(pixels[:area], color_u32)
 }
 
-fill_rect :: proc "contextless" (pixmap: Pixmap, r: Rectf, color: Color4f) {
+fill_rect :: proc "contextless" (pixmap: Pixmap, r: Rectf, color: Color4f) #no_bounds_check
+{
     if color.a <= 0 do return
     r := util.rect_from_f(r)
     b := util.rect_to_bbox(r)
@@ -121,24 +207,15 @@ fill_rect :: proc "contextless" (pixmap: Pixmap, r: Rectf, color: Color4f) {
     pixels := cast([^]ColorU32)pixmap.pixels
     row := y0 * pixmap.w
 
-    if color.a >= 1.0 {
-        c_u8 := pack_color(color, pixmap.pixel_format)
-        for y in y0..<y1 {
-            for x in x0..<x1 {
-                pixels[row + x] = c_u8
-            }
-            row += pixmap.w
+    one_minus_src_alpha := 1.0 - color.a
+    src_b := color * color.a
+
+    for y in y0..<y1 {
+        for x in x0..<x1 {
+            blended_c := src_b + unpack_color_4f(pixels[row+x], pixmap.pixel_format) * one_minus_src_alpha
+            blended_c.a = 1.0
+            pixels[row + x] = pack_color(blended_c, pixmap.pixel_format)
         }
-    } else {
-        one_minus_src_alpha := 1.0 - color.a
-        src_b := color * color.a
-        for y in y0..<y1 {
-            for x in x0..<x1 {
-                blended_c := src_b + unpack_color_4f(pixels[row+x], pixmap.pixel_format) * one_minus_src_alpha
-                blended_c.a = 1.0
-                pixels[row + x] = pack_color(blended_c, pixmap.pixel_format)
-            }
-            row += pixmap.w
-        }
+        row += pixmap.w
     }
 }

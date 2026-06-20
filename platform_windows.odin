@@ -74,8 +74,8 @@ main :: proc() {
         app_name,
         win.utf8_to_wstring("win32 window", context.temp_allocator),
         win.WS_OVERLAPPEDWINDOW,
-        win.CW_USEDEFAULT,
-        win.CW_USEDEFAULT,
+        0,
+        0,
         win.CW_USEDEFAULT,
         win.CW_USEDEFAULT,
         nil,
@@ -245,7 +245,6 @@ main :: proc() {
 }
 
 update_framebuffer_win32 :: proc() {
-	// {{{
 	rect: win.RECT
 	win.GetClientRect(window_handle, &rect)
 	w, h := rect.right - rect.left, rect.bottom - rect.top
@@ -280,12 +279,22 @@ update_framebuffer_win32 :: proc() {
         nil,
         0
     )
-	assert(bitmap_handle != nil)
+	// assert(bitmap_handle != nil)
+	if bitmap_handle == nil {
+		@(static)fake_framebuffer: [64]ColorU32
+		framebuffer_pixmap = util.Pixmap {
+			pixels=raw_data(fake_framebuffer[:]),
+			w = 8,
+			h = 8,
+			pitch = 32,
+			bytes_per_pixel=4,
+		    pixel_format = util.DEFAULT_PIXEL_FORMAT,
+		}
+	}
 	assert(framebuffer_pixmap.pixels != nil)
 	win.SelectObject(memory_device_context, cast(win.HGDIOBJ)bitmap_handle)
 	win.ReleaseDC(window_handle, device_context)
 	stride := ((((bitmap_info.bmiHeader.biWidth * cast(i32)bitmap_info.bmiHeader.biBitCount) + 31) & ~cast(i32)31) >> 3)
-	// }}}
 }
 
 win32_cursor: cstring
@@ -473,6 +482,7 @@ window_proc :: proc "stdcall" (
         }
         update_framebuffer_win32()
     case win.WM_GETMINMAXINFO:
+    	// TODO: use win.AdjustWindowRect() to adjust target size
         min_max_info := transmute(^win.MINMAXINFO)lparam
         if min_size, ok := min_window_size.?; ok {
             min_max_info.ptMinTrackSize = win.POINT{min_size.x, min_size.y}
@@ -538,16 +548,25 @@ handle_platform_command_win :: proc(command: util.Platform_Command) {
         log.debugf("Cursor set to %v", command.cursor_type)
     case .Resize_Window:
         if size, ok := command.size.?; ok {
-        win.SetWindowPos(
-            window_handle,
-            nil,
-            0,
-            0,
-            size.x,
-            size.y,
-            win.SWP_NOMOVE | win.SWP_NOOWNERZORDER
-        )
-    }
+        	rect := win.RECT {
+         		0,
+           		0,
+             	size.x,
+             	size.y,
+         	}
+          	log.debug("Requested size:", size)
+        	win.AdjustWindowRect(&rect, win.WS_OVERLAPPEDWINDOW, win.FALSE)
+         	log.debug(rect)
+	        win.SetWindowPos(
+	            window_handle,
+	            nil,
+	            0,
+	            0,
+	            rect.right - rect.left,
+	            rect.bottom - rect.top,
+	            win.SWP_NOMOVE | win.SWP_NOOWNERZORDER
+	        )
+        }
     case .Set_Window_Min_Size:
         min_window_size = command.size
     case .Set_Window_Max_Size:

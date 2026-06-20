@@ -47,6 +47,7 @@ when PLATFORM_BACKEND == "sdl" {
 	    if sdl_window == nil {
 	        log.panic("Could not create SDL window")
 	    }
+		sdl.SetWindowPosition(sdl_window, 50, 50)
 	    when USE_OPENGL {
 		    sdl.GL_SetAttribute(sdl.GL_CONTEXT_PROFILE_MASK, cast(i32)sdl.GL_CONTEXT_PROFILE_CORE)
 		    sdl.GL_SetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, GL_VERSION[0])
@@ -85,7 +86,7 @@ when PLATFORM_BACKEND == "sdl" {
             audio_spec: sdl.AudioSpec
             audio_stream := sdl.OpenAudioDeviceStream(
                 sdl.AUDIO_DEVICE_DEFAULT_PLAYBACK,
-                &desired_audio_spec, 
+                &desired_audio_spec,
                 nil,
                 nil
             )
@@ -455,7 +456,7 @@ when PLATFORM_BACKEND == "sdl" {
 	    //     return util.KEY_PAGEDOWN
 	    // }
 	}
-    audio_format_from_sdl :: proc "contextless" (sdl_audio_format: sdl.AudioFormat) -> util.Audio_Format 
+    audio_format_from_sdl :: proc "contextless" (sdl_audio_format: sdl.AudioFormat) -> util.Audio_Format
     {
         #partial switch sdl_audio_format {
         case .U8:
