@@ -59,6 +59,8 @@ Engine_Update :: struct #all_or_none {
 
 Tile_Type :: enum u8 {
     None,
+    Dot,
+    Pellet,
     Wall_Vert,
     Wall_Horz,
     Wall_Top_Left,
@@ -93,21 +95,23 @@ Engine_Context :: struct {
     draw_grid: bool,
     position: vec2f,
     player_direction, player_target_direction: Direction,
-    internal_framebuffer: []Color4b, // [512*512]u8,
+    internal_framebuffer: []u8, // [512*512]u8,
     // Row-major
     tile_map: [ROWS*COLS]Tile_Type,
-    // color_palette: [256]Color4b,
     input_state: util.Input_State,
     font_atlas, player_spritesheet, cell_texture: util.Pixmap,
     horz_wall_texture, corner_border_texture: util.Pixmap,
     text_spritesheet: Pixmap,
     vert_wall_texture: Pixmap,
+    dot_texture: Pixmap,
+    tile_sprites: [Tile_Type]Tile_Sprite,
     render_group: Render_Group,
     last_frame_tick: time.Tick,
     lag: time.Duration,
     rects_collide: bool,
     anim: Sprite_Animatior,
     window_size_index: int,
+    palette: Palette,
 
     module: struct {
         dynlib_ptr: dynlib.Library,
@@ -121,6 +125,11 @@ Engine_Context :: struct {
     }
 }
 
+Tile_Sprite :: struct {
+	pixmap: Pixmap,
+	rect: Maybe(Rect),
+	flip: [2]bool,
+}
 
 Module_Init_Proc         :: #type proc(_: ^Engine_Context)
 Module_Update_Proc       :: #type proc()
@@ -151,8 +160,14 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     	type=.Resize_Window,
     	size=window_sizes[game.window_size_index],
     })
+    init_info.platform_command_proc(util.Platform_Command {
+    	type=.Change_Window_Icon,
+    	path="textures/icon.ico",
+    })
 
-    game.internal_framebuffer = make([]Color4b, FRAMEBUFFER_WIDTH * FRAMEBUFFER_HEIGHT)
+    load_bmp_indexed("textures/wall.bmp", &game.palette)
+
+    game.internal_framebuffer = make([]u8, FRAMEBUFFER_WIDTH * FRAMEBUFFER_HEIGHT)
 
     load_ok: bool
     game.player_spritesheet, load_ok = file_load.load_png("textures/pacman.png", init_info.pixel_format)
@@ -166,8 +181,42 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     assert(load_ok)
     game.corner_border_texture, load_ok = file_load.load_png("textures/border_lr.png", init_info.pixel_format)
     assert(load_ok)
+    game.dot_texture, load_ok = file_load.load_png("textures/dot.png", init_info.pixel_format)
+    assert(load_ok)
 
     setup_level()
+
+    game.tile_sprites = #partial {
+    	.Dot={
+     		pixmap=game.dot_texture,
+       		rect=Rect{0, 0, CELL_SIZE, CELL_SIZE},
+     	},
+     	.Pellet={
+      		pixmap=game.dot_texture,
+      		rect=Rect{CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+      	},
+    	.Wall_Vert={
+     		pixmap=game.vert_wall_texture,
+     	},
+     	.Wall_Horz={
+      		pixmap=game.horz_wall_texture,
+      	},
+       	.Wall_Bottom_Right={
+        	pixmap=game.corner_border_texture,
+        },
+       	.Wall_Bottom_Left={
+        	pixmap=game.corner_border_texture,
+         	flip={true, false},
+        },
+       	.Wall_Top_Left={
+        	pixmap=game.corner_border_texture,
+         	flip={true, true},
+        },
+       	.Wall_Top_Right={
+        	pixmap=game.corner_border_texture,
+         	flip={false, true},
+        },
+    }
 
     game.anim = Sprite_Animatior {
    		end_frame=2,
@@ -271,27 +320,24 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
     } else {
         player_frame = PACMAN_RIGHT_FRAMES[game.anim.frame_index]
     }
-    tiles := #partial [Tile_Type]Pixmap {
-   		.Wall_Vert = game.vert_wall_texture,
-    	.Wall_Horz = game.horz_wall_texture,
-     	.Wall_Bottom_Right = game.corner_border_texture,
-    }
     for tile, i in game.tile_map {
-	    // if tile == .None do conintue
+	    tile_sprite := game.tile_sprites[tile]
         render_blit(
-            tiles[tile],
-            cast(f32)CELL_SIZE * get_tile_coord_from_tile_index(i)
+            tile_sprite.pixmap,
+            cast(f32)CELL_SIZE * get_tile_coord_from_tile_index(i),
+            tile_sprite.rect,
+            tile_sprite.flip,
         )
     }
-    draw_text("Hello", {10, 10})
+    draw_text("Hello, World!", {10, 10})
     render_blit(
         game.player_spritesheet,
         game.player_position,
-        Rectf{
-            (f32)(player_frame * PLAYER_SIZE),
+        Rect{
+            player_frame * PLAYER_SIZE,
             0,
-            cast(f32)PLAYER_SIZE,
-            cast(f32)PLAYER_SIZE
+            PLAYER_SIZE,
+            PLAYER_SIZE
         },
         flip={game.player_direction == .Left, game.player_direction == .Up},
     )
@@ -306,6 +352,7 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
     )
     render_group_to_output(&game.render_group, fb_pixmap)
     render_blit_scaled(texture=fb_pixmap, dst_rect=Rectf{0, 0, framebuffer_size.x, framebuffer_size.y})
+    render_blit_scaled_indexed_to_truecolor(texture=fb_pixmap, palette=&game.palette, dst_rect=Rectf{0, 0, framebuffer_size.x, framebuffer_size.y})
     render_group_to_output(&game.render_group, game.update_info.framebuffer)
     if false && game.module.update_render != nil {
         game.module.update_render()
@@ -415,24 +462,23 @@ TEXT_SPRITESHEET_ORDER :: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!:.,?"
 
 draw_text :: proc(text: string, offset: vec2f) {
 	for c, i in text {
-		x :=  get_text_sprite_xoffset(c)
-		fx := offset.x + (f32)(cast(i32)i * CELL_SIZE) + x
-		rect := Rectf{
-						fx,
-						0,
-						cast(f32)CELL_SIZE,
-						cast(f32)CELL_SIZE,
-					}
-		render_blit(
-			game.text_spritesheet,
-			{0, 0},
-			src_rect=rect,
-		)
-		log.debug(c, "->", fx)
+		rect := Rect{
+			get_text_sprite_xoffset(c),
+			0,
+			CELL_SIZE,
+			CELL_SIZE,
+		}
+		if c != ' ' {
+			render_blit(
+				game.text_spritesheet,
+				{ (f32)(cast(i32)i * CELL_SIZE) + offset.x, offset.y},
+				src_rect=rect,
+			)
+		}
 	}
 }
 
-get_text_sprite_xoffset :: proc(target_c: rune) -> f32 {
+get_text_sprite_xoffset :: proc(target_c: rune) -> i32 {
 	idx := 0
 	target_c := target_c
 	for c, i in TEXT_SPRITESHEET_ORDER {
@@ -440,9 +486,9 @@ get_text_sprite_xoffset :: proc(target_c: rune) -> f32 {
 			target_c = (target_c - 'a') + 'A'
 		}
 		if target_c == c {
-			return cast(f32)(cast(i32)i * CELL_SIZE),
+			return cast(i32)i * CELL_SIZE,
 		}
 	}
 	// Returns last character which is placeholder
-	return (f32)(cast(i32)len(TEXT_SPRITESHEET_ORDER) * CELL_SIZE)
+	return cast(i32)len(TEXT_SPRITESHEET_ORDER) * CELL_SIZE
 }

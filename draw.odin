@@ -101,11 +101,81 @@ blit_scaled :: proc(
     }
 }
 
+blit_indexed :: proc(
+    dst_pixmap, src_pixmap: Pixmap,
+    off: vec2,
+    _src_rect: Maybe(Rect) = nil,
+    flip: [2]bool = {false, false}) #no_bounds_check
+{
+	log.assertf(
+		dst_pixmap.bytes_per_pixel == src_pixmap.bytes_per_pixel,
+		"Dst bpp: %v, Src bpp: %v",
+		dst_pixmap.bytes_per_pixel,
+		src_pixmap.bytes_per_pixel
+	)
+	assert( dst_pixmap.pixel_format == src_pixmap.pixel_format )
+	src_pixels := cast([^]u8)src_pixmap.pixels
+    dst_pixels := cast([^]u8)dst_pixmap.pixels
+    dst_min_x: i32 = off.x
+    dst_max_x := off.x + src_pixmap.w
+    dst_min_y: i32 = off.y
+    dst_max_y := off.y + src_pixmap.h
+    src_min_y: i32 = 0
+    src_max_y := src_min_y + src_pixmap.h
+    src_min_x: i32 = 0
+    src_max_x := src_pixmap.w
+    // if dst_rect, ok := _dst_rect.?; ok {
+    //     // TODO:
+    // }
+    if src_rect, ok := _src_rect.?; ok {
+        src_min_x = cast(i32)src_rect.x
+        src_max_x = cast(i32)(src_rect.x + src_rect.w)
+        dst_max_x = cast(i32)(off.x + src_rect.w)
+        src_min_y = cast(i32)src_rect.y
+        src_max_y = cast(i32)(src_rect.y + src_rect.h)
+        dst_max_y = cast(i32)(off.y + src_rect.h)
+    }
+    // FIXME: Adjust if src_rect
+    if off.y < 0 {
+        dst_min_y = 0
+        src_min_y = -off.y
+    } else if dst_max_y > dst_pixmap.h {
+        dst_max_y = dst_pixmap.h
+        src_max_y = dst_max_y - off.y
+    }
+
+    if off.x < 0 {
+        dst_min_x = 0
+        src_min_x = -off.x
+    } else if dst_max_x > dst_pixmap.w {
+        dst_max_x = dst_pixmap.w
+        src_max_x = dst_max_x - off.x
+    }
+    // NOTE: May be off by 1 error
+    flip_offset_x := (src_pixmap.w - 1) if flip.x else 0
+    flip_sign_x: i32 = -1 if flip.x else 1
+    flip_sign_y: i32 = -1 if flip.y else 1
+    row_d := dst_min_y * dst_pixmap.w
+    row_s := (src_max_y - 1 if flip.y else src_min_y) * src_pixmap.w
+    for src_y in src_min_y..<src_max_y {
+        dst_x := dst_min_x
+        for src_x in src_min_x..<src_max_x {
+	        // FIXME:
+	       	src_xx := flip_offset_x + (src_x * flip_sign_x)
+            src_c := src_pixels[row_s + src_xx]
+            dst_pixels[row_d + dst_x] = src_c
+            dst_x += 1
+        }
+        row_d += dst_pixmap.w
+        row_s += flip_sign_y * src_pixmap.w
+    }
+}
+
 // TODO: Replace floating point with integer
 blit :: proc(
     dst_pixmap, src_pixmap: Pixmap,
     off: vec2,
-    _src_rect: Maybe(Rectf) = nil,
+    _src_rect: Maybe(Rect) = nil,
     flip: [2]bool = {false, false}) #no_bounds_check
 {
 	log.assertf(
@@ -131,10 +201,10 @@ blit :: proc(
     if src_rect, ok := _src_rect.?; ok {
         src_min_x = cast(i32)src_rect.x
         src_max_x = cast(i32)(src_rect.x + src_rect.w)
-        dst_max_x = cast(i32)(cast(f32)off.x + src_rect.w)
+        dst_max_x = cast(i32)(off.x + src_rect.w)
         src_min_y = cast(i32)src_rect.y
         src_max_y = cast(i32)(src_rect.y + src_rect.h)
-        dst_max_y = cast(i32)(cast(f32)off.y + src_rect.h)
+        dst_max_y = cast(i32)(off.y + src_rect.h)
     }
     // FIXME: Adjust if src_rect
     if off.y < 0 {
@@ -187,6 +257,12 @@ pixmap_fill :: proc "contextless" (pixmap: Pixmap, color: Color4f) {
 	pixels := cast([^]ColorU32)pixmap.pixels
 	area := pixmap.w * pixmap.h
     slice.fill(pixels[:area], color_u32)
+}
+
+pixmap_fill_indexed :: proc(pixmap: Pixmap, color: u8) {
+	pixels := cast([^]u8)pixmap.pixels
+	area := pixmap.w * pixmap.h
+    slice.fill(pixels[:area], color)
 }
 
 fill_rect :: proc "contextless" (pixmap: Pixmap, r: Rectf, color: Color4f) #no_bounds_check

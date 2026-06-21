@@ -8,7 +8,7 @@ import "odinlib:util"
 
 Rectf :: util.Rectf
 
-PERP :: util.PERP
+Palette :: [256]Color4f
 
 white_texture_data := []ColorU32 {
 	0xffffffff,
@@ -17,18 +17,9 @@ white_texture_data := []ColorU32 {
 	0xffffffff,
 }
 
-WHITE_TEXTURE := Pixmap {
-	pixels=raw_data(white_texture_data),
-	w=2,
-	h=2,
-	pitch=8,
-	bytes_per_pixel=4,
-	pixel_format=util.DEFAULT_PIXEL_FORMAT,
-}
-
 // Queue of rendering commands
 Render_Group :: struct {
-    buffer: [dynamic; 1024]Render_Entry,
+    buffer: [dynamic; 2048]Render_Entry,
 }
 
 Render_Clear :: struct { color: Color4f }
@@ -46,7 +37,7 @@ Render_Stroke_Rect :: struct {
 Render_Blit :: struct {
 	texture: Pixmap,
     offset: vec2f,
-    src_rect: Maybe(Rectf),
+    src_rect: Maybe(Rect),
     flip: [2]bool,
     // color: color
 }
@@ -58,12 +49,22 @@ Render_Blit_Scaled :: struct {
 	dst_rect: Maybe(Rectf),
 }
 
+Render_Blit_Scaled_Indexed_To_Truecolor :: struct {
+	texture: Pixmap,
+	palette: ^Palette,
+	offset: vec2f,
+	src_rect: Maybe(Rectf),
+	dst_rect: Maybe(Rectf),
+}
+
 Render_Entry :: union {
     Render_Clear,
+    Render_Clear_Indexed,
     Render_Fill_Rect,
     Render_Stroke_Rect,
     Render_Blit,
     Render_Blit_Scaled,
+    Render_Blit_Scaled_Indexed_To_Truecolor,
 }
 
 // Push render entry onto render group
@@ -109,6 +110,14 @@ render_group_to_output :: proc(rg: ^Render_Group, target_pixmap: Pixmap) {
             fill_rect(target_pixmap, cmd.rect, cmd.color)
         case Render_Stroke_Rect:
             stroke_rect(target_pixmap, cmd.rect, cmd.color)
+        case Render_Blit_Scaled_Indexed_To_Truecolor:
+	       	render_blit_scaled_indexed_to_truecolor(
+	        	cmd.texture,
+	         	cmd.palette,
+	          	cmd.offset,
+	           	cmd.src_rect,
+	           	cmd.dst_rect,
+	        )
         }
     }
     clear(&rg.buffer)
@@ -126,7 +135,7 @@ render_clear :: proc(color: Color4f) {
 render_blit :: proc(
     texture: Pixmap,
     offset: vec2f = {0, 0},
-    src_rect: Maybe(Rectf) = nil,
+    src_rect: Maybe(Rect) = nil,
     flip: [2]bool = {false, false})
 {
 	if texture.pixels == nil do return
@@ -164,6 +173,25 @@ render_stroke_rect :: proc(rect: Rectf, color: Color4f) {
         Render_Stroke_Rect {
             rect=rect,
             color=color,
+        }
+    )
+}
+
+render_blit_scaled_indexed_to_truecolor :: proc(
+	texture: Pixmap,
+	palette: ^Palette,
+	offset: vec2f = {0, 0},
+	src_rect: Maybe(Rectf) = nil,
+	dst_rect: Maybe(Rectf) = nil)
+{
+	render_group_push(
+        &game.render_group,
+        Render_Blit_Scaled_Indexed_To_Truecolor {
+            texture=texture,
+            palette=palette,
+            offset=offset,
+            src_rect=src_rect,
+            dst_rect=dst_rect,
         }
     )
 }
@@ -210,7 +238,6 @@ stroke_rect :: proc(pixmap: Pixmap, r: Rectf, color: Color4f) {
         pixel^ = pack_color(blended_c, pixel_format)
     }
 
-    log.debugf("HERE")
     for y in y0..<y1 {
         plot_pixel(&pixels[row +  x0], src_b, one_minus_src_alpha, pixmap.pixel_format)
         plot_pixel(&pixels[row + x1 - 1], src_b, one_minus_src_alpha, pixmap.pixel_format)

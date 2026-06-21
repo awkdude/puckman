@@ -18,44 +18,26 @@ setup_level :: proc() {
         switch level_data[data_i] {
         case '0', ' ':
         	game.tile_map[tile_i] = .None
+        case '.':
+        	game.tile_map[tile_i] = .Dot
+        case '*':
+        	game.tile_map[tile_i] = .Pellet
         case '|':
             game.tile_map[tile_i] = .Wall_Vert
         case '-':
             game.tile_map[tile_i] = .Wall_Horz
-        case '+':
-            game.tile_map[tile_i] = .Unused
+        case '7':
+            game.tile_map[tile_i] = .Wall_Top_Left
+        case '9':
+            game.tile_map[tile_i] = .Wall_Top_Right
+        case '1':
+            game.tile_map[tile_i] = .Wall_Bottom_Left
+        case '3':
+            game.tile_map[tile_i] = .Wall_Bottom_Right
         case :
             continue
         }
         tile_i += 1
     }
     log.debug(tile_i)
-    // Fill corner walls
-    for &tile, tile_i in game.tile_map {
-        // TODO: assert this isn't at edge of map
-        if tile != .Unused do continue
-        left := get_adjacent_tile_type(tile_i, .Left)
-        right := get_adjacent_tile_type(tile_i, .Right)
-        up := get_adjacent_tile_type(tile_i, .Up)
-        down := get_adjacent_tile_type(tile_i, .Down)
-        row := cast(i32)tile_i / COLS
-        col := cast(i32)tile_i % COLS
-        assert(row > 0, "Corner not allowed on top edge")
-        assert(row < ROWS-1, "Corner not allowed on bottom edge")
-        assert(col > 0, "Corner not allowed on left edge")
-        assert(col < COLS-1, "Corner not allowed on right edge")
-        if up == .Wall_Vert {
-            if left == .Wall_Horz {
-                tile = .Wall_Bottom_Right
-            } else if right == .Wall_Horz {
-                tile = .Wall_Bottom_Left
-            }
-        } else if down == .Wall_Vert {
-            if left == .Wall_Horz {
-                tile = .Wall_Top_Right
-            } else if right == .Wall_Horz {
-                tile = .Wall_Top_Left
-            }
-        }
-    }
 }
