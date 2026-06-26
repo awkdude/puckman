@@ -16,6 +16,8 @@ import stbi "vendor:stb/image"
 
 
 vec2f :: util.vec2f
+color_cyan_4b :: Color4b {0, 0xff, 0xff, 0xff}
+color_green_4b :: Color4b {0, 0xff, 0, 0xff}
 
 PLATFORM_BACKEND :: #config(BACKEND, "native")
 
@@ -61,12 +63,27 @@ Tile_Type :: enum u8 {
     None,
     Dot,
     Pellet,
-    Wall_Vert,
-    Wall_Horz,
+    Wall_Left,
+    Wall_Right,
+    Wall_Top,
+    Wall_Bottom,
     Wall_Top_Left,
     Wall_Top_Right,
     Wall_Bottom_Left,
     Wall_Bottom_Right,
+    Border_Top,
+    Border_Bottom,
+    Border_Left,
+    Border_Right,
+    Border_Sharp_Top_Left,
+    Border_Sharp_Top_Right,
+    Border_Sharp_Bottom_Left,
+    Border_Sharp_Bottom_Right,
+    Border_Top_Left,
+    Border_Top_Right,
+    Border_Bottom_Left,
+    Border_Bottom_Right,
+    Ghost_Pass,
     Unused,
 }
 
@@ -92,18 +109,16 @@ Engine_Context :: struct {
     update_info: Engine_Update,
     mouse_position: vec2,
     player_position: vec2f,
-    draw_grid: bool,
+    do_draw_grid: bool,
     position: vec2f,
     player_direction, player_target_direction: Direction,
-    internal_framebuffer: []u8, // [512*512]u8,
+    internal_framebuffer: []ColorU32, // [512*512]u8,
     // Row-major
     tile_map: [ROWS*COLS]Tile_Type,
     input_state: util.Input_State,
-    font_atlas, player_spritesheet, cell_texture: util.Pixmap,
-    horz_wall_texture, corner_border_texture: util.Pixmap,
+    player_spritesheet:  util.Pixmap,
+    tile_spritesheet: Pixmap,
     text_spritesheet: Pixmap,
-    vert_wall_texture: Pixmap,
-    dot_texture: Pixmap,
     tile_sprites: [Tile_Type]Tile_Sprite,
     render_group: Render_Group,
     last_frame_tick: time.Tick,
@@ -126,8 +141,7 @@ Engine_Context :: struct {
 }
 
 Tile_Sprite :: struct {
-	pixmap: Pixmap,
-	rect: Maybe(Rect),
+	rect: Rect,
 	flip: [2]bool,
 }
 
@@ -165,56 +179,107 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     	path="textures/icon.ico",
     })
 
-    load_bmp_indexed("textures/wall.bmp", &game.palette)
+    game.render_group.palette = game.palette
 
-    game.internal_framebuffer = make([]u8, FRAMEBUFFER_WIDTH * FRAMEBUFFER_HEIGHT)
+    game.internal_framebuffer = make([]ColorU32, FRAMEBUFFER_WIDTH * FRAMEBUFFER_HEIGHT)
 
     load_ok: bool
-    game.player_spritesheet, load_ok = file_load.load_png("textures/pacman.png", init_info.pixel_format)
+    game.player_spritesheet, load_ok = load_bmp_indexed("textures/pacman.bmp")
     assert(load_ok)
-    game.cell_texture, load_ok = file_load.load_png("textures/grid_cell.png", init_info.pixel_format)
+    game.text_spritesheet, load_ok = load_bmp_indexed("textures/text.bmp")
     assert(load_ok)
-    game.text_spritesheet, load_ok = file_load.load_png("textures/text.png", init_info.pixel_format)
-    assert(load_ok)
-    game.horz_wall_texture, load_ok = file_load.load_png("textures/border_hori.png", init_info.pixel_format)
-    game.vert_wall_texture, load_ok = file_load.load_png("textures/wall-vert.png", init_info.pixel_format)
-    assert(load_ok)
-    game.corner_border_texture, load_ok = file_load.load_png("textures/border_lr.png", init_info.pixel_format)
-    assert(load_ok)
-    game.dot_texture, load_ok = file_load.load_png("textures/dot.png", init_info.pixel_format)
+    game.tile_spritesheet, load_ok = load_bmp_indexed("textures/tiles.bmp", &game.palette)
     assert(load_ok)
 
-    setup_level()
+    try_setup_level()
 
-    game.tile_sprites = #partial {
+    game.tile_sprites = {
+    	.None={},
+    	.Unused={},
     	.Dot={
-     		pixmap=game.dot_texture,
-       		rect=Rect{0, 0, CELL_SIZE, CELL_SIZE},
+       		rect=Rect{8*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
      	},
      	.Pellet={
-      		pixmap=game.dot_texture,
-      		rect=Rect{CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+      		rect=Rect{9*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
       	},
-    	.Wall_Vert={
-     		pixmap=game.vert_wall_texture,
+    	.Wall_Left={
+       		rect=Rect{0*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+         	flip={true, false},
      	},
-     	.Wall_Horz={
-      		pixmap=game.horz_wall_texture,
+     	.Wall_Right={
+      		rect=Rect{0*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
       	},
+      	.Wall_Top={
+      		rect=Rect{1*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+           	flip={false, true},
+       	},
+       	.Wall_Bottom={
+      		rect=Rect{1*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+       	},
        	.Wall_Bottom_Right={
-        	pixmap=game.corner_border_texture,
+       		rect=Rect{2*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         },
        	.Wall_Bottom_Left={
-        	pixmap=game.corner_border_texture,
+       		rect=Rect{2*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
          	flip={true, false},
         },
        	.Wall_Top_Left={
-        	pixmap=game.corner_border_texture,
+       		rect=Rect{2*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
          	flip={true, true},
         },
        	.Wall_Top_Right={
-        	pixmap=game.corner_border_texture,
+       		rect=Rect{2*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
          	flip={false, true},
+        },
+        .Border_Bottom={
+        	rect=Rect{4*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+         	flip={false, false},
+        },
+        .Border_Top={
+        	rect=Rect{4*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+         	flip={false, true},
+        },
+        .Border_Left={
+        	rect=Rect{5*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+         	flip={true, false},
+        },
+        .Border_Right={
+        	rect=Rect{5*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+         	flip={false, false},
+        },
+       	.Border_Bottom_Right={
+       		rect=Rect{6*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        },
+       	.Border_Bottom_Left={
+       		rect=Rect{6*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+         	flip={true, false},
+        },
+       	.Border_Top_Left={
+       		rect=Rect{6*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+         	flip={true, true},
+        },
+       	.Border_Top_Right={
+       		rect=Rect{6*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+         	flip={false, true},
+        },
+       	.Border_Sharp_Bottom_Right={
+       		rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        },
+       	.Border_Sharp_Bottom_Left={
+       		rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+         	flip={true, false},
+        },
+       	.Border_Sharp_Top_Left={
+       		rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+         	flip={true, true},
+        },
+       	.Border_Sharp_Top_Right={
+       		rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+         	flip={false, true},
+        },
+        .Ghost_Pass={
+        	rect=Rect{3*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+         	flip={false, false},
         },
     }
 
@@ -259,6 +324,8 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
     diff := time.tick_diff(game.last_frame_tick, now)
 	game.lag += diff
     game.last_frame_tick = now
+
+    try_setup_level()
     // TODO: Don't update if diff is too big (likely due to debugging)
     for game.lag > SIM_UPDATE_INTERVAL {
         SPEED :: 1.5
@@ -291,15 +358,9 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
         bytes_per_pixel=4,
         pixel_format=game.init_info.pixel_format,
     }
-    render_clear(color_grey)
+    game.render_group.palette = game.palette
+    rg_clear(Color4b{255, 127, 127, 255})
 
-    if game.draw_grid {
-	    for y: i32 = 0; y < fb_pixmap.h; y += CELL_SIZE {
-	       	for x: i32 = 0; x < fb_pixmap.w; x += CELL_SIZE {
-                render_blit(game.cell_texture, cast(vec2f)vec2{x, y})
-	       	}
-	    }
-    }
     // log.debugf("Texture: %v", game.texture)
     // log.debugf("Cell Texture: %v", game.cell_texture)
     // for x: f32 = 0; x < framebuffer_size.x; x += cast(f32)game.texture.w {
@@ -320,44 +381,90 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
     } else {
         player_frame = PACMAN_RIGHT_FRAMES[game.anim.frame_index]
     }
+    v := (u8)(util.time_sin() * 255.0)
+    rg_palette(1, {v, v, v, 255})
+
+    rg_texture(game.tile_spritesheet)
     for tile, i in game.tile_map {
-	    tile_sprite := game.tile_sprites[tile]
-        render_blit(
-            tile_sprite.pixmap,
-            cast(f32)CELL_SIZE * get_tile_coord_from_tile_index(i),
-            tile_sprite.rect,
-            tile_sprite.flip,
-        )
+    	if tile != .None && tile != .Unused {
+	    	tile_sprite := game.tile_sprites[tile]
+	        rg_blit(
+	         	CELL_SIZE * get_tile_coord_from_tile_index(i),
+	          	tile_sprite.rect,
+	           	tile_sprite.flip,
+	        )
+     	}
     }
-    draw_text("Hello, World!", {10, 10})
-    render_blit(
-        game.player_spritesheet,
-        game.player_position,
-        Rect{
-            player_frame * PLAYER_SIZE,
-            0,
-            PLAYER_SIZE,
-            PLAYER_SIZE
-        },
-        flip={game.player_direction == .Left, game.player_direction == .Up},
+    log.debug(len(game.render_group.buffer))
+    draw_text("Hello, World!", {CELL_SIZE, CELL_SIZE})
+    // draw player
+    rg_texture(game.player_spritesheet)
+    rg_blit(
+     	cast(vec2)game.player_position - {PLAYER_SIZE, PLAYER_SIZE}/2,
+      	Rect{
+        	player_frame * PLAYER_SIZE,
+         	0,
+          	PLAYER_SIZE,
+           	PLAYER_SIZE
+       	},
+        {game.player_direction == .Left, game.player_direction == .Up},
+   	)
+    rg_fill_rect(Rect{
+    	cast(i32)game.player_position.x,
+    	cast(i32)game.player_position.y,
+     	1,
+      	1
+    }, color_cyan_4b)
+    // render_stroke_rect(
+    //     Rectf{
+    //         game.player_position.x,
+    //         game.player_position.y,
+    //         cast(f32)PLAYER_SIZE,
+    //         cast(f32)PLAYER_SIZE,
+    //     },
+    //     color_orange
+    // )
+    rg_to_output(fb_pixmap)
+    rg_texture(fb_pixmap)
+    rg_blit_scaled(
+     	{0, 0},
+    	dst_rect=Rect{
+     		0,
+       		0,
+        	game.update_info.framebuffer.w,
+        	game.update_info.framebuffer.h,
+     	}
     )
-    render_stroke_rect(
-        Rectf{
-            game.player_position.x,
-            game.player_position.y,
-            cast(f32)PLAYER_SIZE,
-            cast(f32)PLAYER_SIZE,
-        },
-        color_orange
-    )
-    render_group_to_output(&game.render_group, fb_pixmap)
-    render_blit_scaled(texture=fb_pixmap, dst_rect=Rectf{0, 0, framebuffer_size.x, framebuffer_size.y})
-    render_blit_scaled_indexed_to_truecolor(texture=fb_pixmap, palette=&game.palette, dst_rect=Rectf{0, 0, framebuffer_size.x, framebuffer_size.y})
-    render_group_to_output(&game.render_group, game.update_info.framebuffer)
+    rg_to_output(game.update_info.framebuffer)
+    if game.do_draw_grid {
+	   	pixels := cast([^]ColorU32)game.update_info.framebuffer.pixels
+    	line_color := util.pack_color_4f(color_green, game.init_info.pixel_format)
+     {
+	    x: f32 = cast(f32)CELL_SIZE
+     	x_inc := cast(f32)CELL_SIZE * (framebuffer_size.x / cast(f32)FRAMEBUFFER_WIDTH)
+      	log.debug(x_inc)
+       	for x := x_inc; x < framebuffer_size.x; x += x_inc {
+     		for y: i32 = 0; y < cast(i32)framebuffer_size.y; y += 1 {
+       			pixels[y*game.update_info.framebuffer.w + cast(i32)x] = line_color
+       		}
+     	}
+     }
+     {
+     	y: f32 = cast(f32)CELL_SIZE
+      	y_inc := cast(f32)CELL_SIZE * (framebuffer_size.y / cast(f32)FRAMEBUFFER_HEIGHT)
+     	for y := y_inc; y < framebuffer_size.y; y += y_inc {
+	   		for x: i32 = 0; x < cast(i32)framebuffer_size.x; x += 1 {
+     			pixels[cast(i32)y*game.update_info.framebuffer.w + x] = line_color
+	  		}
+	   	}
+     }
+    }
     if false && game.module.update_render != nil {
         game.module.update_render()
     }
     game.input_state.transient = {}
+    free_all(context.temp_allocator)
+
     return game.running
 }
 
@@ -372,7 +479,7 @@ eng_handle_event :: proc(window_event: util.Window_Event) {
             case util.KEY_ESCAPE:
                 game.running = false
             case util.KEY_SPACE:
-            	game.draw_grid = !game.draw_grid
+            	game.do_draw_grid = !game.do_draw_grid
             case util.KEY_PAGEUP, util.KEY_PAGEDOWN:
             	game.window_size_index = (game.window_size_index + 1) % len(window_sizes)
 	            game.init_info.platform_command_proc(util.Platform_Command{
@@ -450,17 +557,22 @@ get_adjacent_tile_type :: proc(#any_int tile_idx: i32, direction: Direction) -> 
     return game.tile_map[adj_idx]
 }
 
-get_tile_coord_from_tile_index :: proc(#any_int idx: i32) -> vec2f {
-    return cast(vec2f)vec2{idx % COLS, idx / COLS}
+get_tile_coord_from_tile_index :: #force_inline proc "contextless" (#any_int idx: i32) -> vec2 {
+    return vec2{idx % COLS, idx / COLS}
 }
 
-get_position_from_grid_coord :: proc(gp: vec2) -> vec2f {
-	return cast(vec2f)(gp * CELL_SIZE)
+get_position_from_grid_coord :: #force_inline proc "contextless" (gp: vec2) -> vec2 {
+	return gp * CELL_SIZE
 }
 
-TEXT_SPRITESHEET_ORDER :: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!:.,?"
+get_position_from_tile_index :: #force_inline proc "contextless" (#any_int idx: i32) -> vec2 {
+	return CELL_SIZE * vec2{idx % COLS, idx / COLS}
+}
 
-draw_text :: proc(text: string, offset: vec2f) {
+TEXT_SPRITESHEET_ORDER :: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!:.,?\"-/"
+
+draw_text :: proc(text: string, offset: vec2) {
+	rg_texture(game.text_spritesheet)
 	for c, i in text {
 		rect := Rect{
 			get_text_sprite_xoffset(c),
@@ -469,10 +581,9 @@ draw_text :: proc(text: string, offset: vec2f) {
 			CELL_SIZE,
 		}
 		if c != ' ' {
-			render_blit(
-				game.text_spritesheet,
-				{ (f32)(cast(i32)i * CELL_SIZE) + offset.x, offset.y},
-				src_rect=rect,
+			rg_blit(
+				{(cast(i32)i * CELL_SIZE) + offset.x, offset.y},
+				rect,
 			)
 		}
 	}
