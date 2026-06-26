@@ -93,7 +93,7 @@ try_setup_level :: proc() {
         	tile = .Border_Right
         case '!':
         	assert(!placed_pacman, "Starting marker appears more than once!")
-         	game.player_position = cast(vec2f)get_position_from_tile_index(tile_i)
+         	game.player_position = cast(vec2f)get_position_from_tile_index(tile_i) + cast(vec2f)CELL_SIZE/2
         	placed_pacman = true
         case:
             continue

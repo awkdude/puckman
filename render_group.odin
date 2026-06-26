@@ -148,6 +148,16 @@ rg_texture :: proc(texture: Pixmap) {
 	append(&game.render_group.buffer, RG_Entry{ type=.Texture, texture=RG_Texture{texture=texture}})
 }
 
+RG_Grid :: struct {
+	rect: Rect,
+	cell_size: vec2f,
+	color: Color4f,
+}
+
+rg_grid :: proc(rect: Rect, cell_size: vec2f, color: Color4f) {
+    append(&game.render_group.buffer, RG_Entry {type=.Grid, grid=RG_Grid{rect=rect, cell_size=cell_size, color=color}})
+}
+
 RG_Entry_Type :: enum i32 {
     Clear,
     Palette,
@@ -156,6 +166,7 @@ RG_Entry_Type :: enum i32 {
     Texture,
     Blit,
     Blit_Scaled,
+    Grid,
 }
 
 RG_Entry :: struct {
@@ -166,6 +177,7 @@ RG_Entry :: struct {
 		rect: RG_Rect,
 		blit: RG_Blit,
 		texture: RG_Texture,
+        grid: RG_Grid,
 	},
 }
 
@@ -220,6 +232,25 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
             stroke_rect_f(target_pixmap, cmd.rect.rect, util.color4b_to_4f(cmd.rect.color))
         case .Texture:
         	rg.texture = cmd.texture.texture
+        case .Grid:
+            pixels := cast([^]ColorU32)target_pixmap.pixels
+            line_color := util.pack_color_4f(cmd.grid.color, target_pixmap.pixel_format)
+            x := cast(f32)cmd.grid.rect.x
+            max_x := cast(f32)cmd.grid.rect.x + cast(f32)cmd.grid.rect.w
+        	x_inc := cmd.grid.cell_size.x
+            for ; x < max_x; x += x_inc {
+        		for y: i32 = 0; y < target_pixmap.h; y += 1 {
+          			pixels[y*game.update_info.framebuffer.w + cast(i32)x] = line_color
+          		}
+        	}
+        	y := cast(f32)cmd.grid.rect.x
+            max_y := cast(f32)cmd.grid.rect.y + cast(f32)cmd.grid.rect.h
+         	y_inc := cmd.grid.cell_size.y
+        	for y := y_inc; y < max_y ; y += y_inc {
+                for x: i32 = 0; x < target_pixmap.w; x += 1 {
+                    pixels[cast(i32)y*game.update_info.framebuffer.w + x] = line_color
+                }
+            }
         }
     }
     clear(&rg.buffer)

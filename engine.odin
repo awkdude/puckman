@@ -32,6 +32,7 @@ PLAYER_SIZE_CELLS :: 2
 PLAYER_SIZE: i32 : PLAYER_SIZE_CELLS * CELL_SIZE
 FRAMEBUFFER_WIDTH  :: CELL_SIZE * ROWS
 FRAMEBUFFER_HEIGHT :: CELL_SIZE * COLS
+FRAMEBUFFER_SIZE :: vec2{FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT }
 
 PACMAN_RIGHT_FRAMES := [?]i32 {0, 2, 4}
 PACMAN_DOWN_FRAMES := [?]i32{1, 3, 4}
@@ -345,6 +346,11 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
         } else if game.player_position.y > max_y {
             game.player_position.y = max_y
         }
+        tile := get_tile_from_position(cast(vec2)game.player_position)
+        if tile^ == .Dot {
+        	// TODO: Eat dot
+         	tile^ = .None
+        }
         anim_update(&game.anim, game.last_frame_tick)
         game.lag -= SIM_UPDATE_INTERVAL
     }
@@ -360,19 +366,6 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
     }
     game.render_group.palette = game.palette
     rg_clear(Color4b{255, 127, 127, 255})
-
-    // log.debugf("Texture: %v", game.texture)
-    // log.debugf("Cell Texture: %v", game.cell_texture)
-    // for x: f32 = 0; x < framebuffer_size.x; x += cast(f32)game.texture.w {
-    //     render_group_push(
-    //         &game.render_group,
-    //         Render_Blit {
-    //             texture=game.texture,
-    //             offset={x, 0},
-    //             flip={true, false},
-    //         }
-    //     )
-    // }
 
     player_frame: i32
     is_vert := game.player_direction in bit_set[Direction]{.Up, .Down}
@@ -396,34 +389,41 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
      	}
     }
     log.debug(len(game.render_group.buffer))
-    draw_text("Hello, World!", {CELL_SIZE, CELL_SIZE})
+    buf: [64]u8
+    text := fmt.bprintf(buf[:], "GRID: %v", "ON" if game.do_draw_grid else "OFF")
+    draw_text(text, {CELL_SIZE, CELL_SIZE})
     // draw player
-    rg_texture(game.player_spritesheet)
-    rg_blit(
-     	cast(vec2)game.player_position - {PLAYER_SIZE, PLAYER_SIZE}/2,
-      	Rect{
-        	player_frame * PLAYER_SIZE,
-         	0,
-          	PLAYER_SIZE,
-           	PLAYER_SIZE
-       	},
-        {game.player_direction == .Left, game.player_direction == .Up},
-   	)
+    if game.do_draw_grid {
+  		col := cast(i32)(cast(f32)game.player_position.x / (f32)(CELL_SIZE))
+  		row := cast(i32)(cast(f32)game.player_position.y / (f32)(CELL_SIZE))
+    	rg_fill_rect(
+     		Rect{
+	       		x=col*CELL_SIZE,
+	         	y=row*CELL_SIZE,
+	          	w=CELL_SIZE,
+	          	h=CELL_SIZE,
+       		},
+         	{0xff, 0, 0, 0xff},
+     	)
+    } else {
+	    rg_texture(game.player_spritesheet)
+	    rg_blit(
+	     	cast(vec2)game.player_position - {PLAYER_SIZE, PLAYER_SIZE}/2,
+	      	Rect{
+	        	player_frame * PLAYER_SIZE,
+	         	0,
+	          	PLAYER_SIZE,
+	           	PLAYER_SIZE
+	       	},
+	        {game.player_direction == .Left, game.player_direction == .Up},
+	   	)
+    }
     rg_fill_rect(Rect{
     	cast(i32)game.player_position.x,
     	cast(i32)game.player_position.y,
      	1,
       	1
     }, color_cyan_4b)
-    // render_stroke_rect(
-    //     Rectf{
-    //         game.player_position.x,
-    //         game.player_position.y,
-    //         cast(f32)PLAYER_SIZE,
-    //         cast(f32)PLAYER_SIZE,
-    //     },
-    //     color_orange
-    // )
     rg_to_output(fb_pixmap)
     rg_texture(fb_pixmap)
     rg_blit_scaled(
@@ -435,30 +435,19 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
         	game.update_info.framebuffer.h,
      	}
     )
-    rg_to_output(game.update_info.framebuffer)
     if game.do_draw_grid {
-	   	pixels := cast([^]ColorU32)game.update_info.framebuffer.pixels
-    	line_color := util.pack_color_4f(color_green, game.init_info.pixel_format)
-     {
-	    x: f32 = cast(f32)CELL_SIZE
-     	x_inc := cast(f32)CELL_SIZE * (framebuffer_size.x / cast(f32)FRAMEBUFFER_WIDTH)
-      	log.debug(x_inc)
-       	for x := x_inc; x < framebuffer_size.x; x += x_inc {
-     		for y: i32 = 0; y < cast(i32)framebuffer_size.y; y += 1 {
-       			pixels[y*game.update_info.framebuffer.w + cast(i32)x] = line_color
-       		}
-     	}
-     }
-     {
-     	y: f32 = cast(f32)CELL_SIZE
-      	y_inc := cast(f32)CELL_SIZE * (framebuffer_size.y / cast(f32)FRAMEBUFFER_HEIGHT)
-     	for y := y_inc; y < framebuffer_size.y; y += y_inc {
-	   		for x: i32 = 0; x < cast(i32)framebuffer_size.x; x += 1 {
-     			pixels[cast(i32)y*game.update_info.framebuffer.w + x] = line_color
-	  		}
-	   	}
-     }
+   		rg_grid(
+     		Rect {
+         		0,
+          		0,
+              	game.update_info.framebuffer.w,
+               	game.update_info.framebuffer.h
+      		},
+           	cast(f32)CELL_SIZE * (framebuffer_size / cast(vec2f)FRAMEBUFFER_SIZE),
+            color_green
+  		)
     }
+    rg_to_output(game.update_info.framebuffer)
     if false && game.module.update_render != nil {
         game.module.update_render()
     }
@@ -559,6 +548,12 @@ get_adjacent_tile_type :: proc(#any_int tile_idx: i32, direction: Direction) -> 
 
 get_tile_coord_from_tile_index :: #force_inline proc "contextless" (#any_int idx: i32) -> vec2 {
     return vec2{idx % COLS, idx / COLS}
+}
+
+get_tile_from_position :: #force_inline proc "contextless" (pos: vec2) -> ^Tile_Type {
+	col := pos.x / CELL_SIZE
+	row := pos.y / CELL_SIZE
+	return &game.tile_map[row * COLS + col]
 }
 
 get_position_from_grid_coord :: #force_inline proc "contextless" (gp: vec2) -> vec2 {

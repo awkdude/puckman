@@ -299,6 +299,7 @@ blit :: proc(
     }
 }
 
+// TODO: rename
 fill_rect_f :: proc "contextless" (pixmap: Pixmap, r: Rect, color: Color4f) #no_bounds_check
 {
     if color.a <= 0 do return
