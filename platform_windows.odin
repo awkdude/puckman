@@ -161,7 +161,7 @@ main :: proc() {
         get_window_dpi = proc() -> i32 {
             return cast(i32)win.GetDpiForWindow(window_handle)
         },
-        pixel_format=util.DEFAULT_PIXEL_FORMAT,
+        pixel_format={bytes_per_pixel=4, layout=util.DEFAULT_PIXEL_LAYOUT},
     })
 
     if !eng_ok {
@@ -215,7 +215,7 @@ main :: proc() {
         // }}}
         gamepad_state, is_connected := get_gamepad_state_xinput()
         eng_update := Engine_Update{
-                window_size={
+                window_dims={
                 client_rect.right-client_rect.left,
                 client_rect.bottom-client_rect.top,
             },
@@ -253,14 +253,13 @@ update_framebuffer_win32 :: proc() {
 		w = w,
 		h = h,
 		pitch = w * 4,
-		bytes_per_pixel=4,
-	    pixel_format = util.DEFAULT_PIXEL_FORMAT,
+		format={layout=util.DEFAULT_PIXEL_LAYOUT, bytes_per_pixel=4},
 	}
 	bitmap_info = win.BITMAPINFO {
 		bmiHeader = {
-			biSize = u32(size_of(win.BITMAPINFOHEADER)),
+			biSize = cast(u32)size_of(win.BITMAPINFOHEADER),
 			biWidth = w,
-			biHeight = -h,
+			biHeight = -h, // Top-bottom
 			biPlanes = 1,
 			biBitCount = 32,
 			biCompression = win.BI_RGB,
@@ -287,8 +286,8 @@ update_framebuffer_win32 :: proc() {
 			w = 8,
 			h = 8,
 			pitch = 32,
-			bytes_per_pixel=4,
-		    pixel_format = util.DEFAULT_PIXEL_FORMAT,
+			format={bytes_per_pixel=4,
+		    layout = util.DEFAULT_PIXEL_LAYOUT},
 		}
 	}
 	assert(framebuffer_pixmap.pixels != nil)

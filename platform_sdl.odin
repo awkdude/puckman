@@ -59,10 +59,13 @@ when PLATFORM_BACKEND == "sdl" {
         sdl_pixel_format := sdl.GetWindowPixelFormat(sdl_window)
         sdl_pixel_format_details := sdl.GetPixelFormatDetails(sdl_pixel_format)
         pixel_format := util.Pixel_Format {
-            r=sdl_pixel_format_details.Rshift,
-            g=sdl_pixel_format_details.Gshift,
-            b=sdl_pixel_format_details.Bshift,
-            a=sdl_pixel_format_details.Ashift,
+            layout={
+            	r=sdl_pixel_format_details.Rshift,
+	            g=sdl_pixel_format_details.Gshift,
+	            b=sdl_pixel_format_details.Bshift,
+	            a=sdl_pixel_format_details.Ashift,
+            },
+            bytes_per_pixel=4,
         }
         // Find alpha shift value if non-existent
         if sdl_pixel_format_details.Abits == 0 {
@@ -146,8 +149,7 @@ when PLATFORM_BACKEND == "sdl" {
 	            w=w,
 	            h=h,
 	            pitch=window_surface.pitch,
-                pixel_format=pixel_format,
-                bytes_per_pixel=4,
+                format=pixel_format,
 	        }
 	        U := Engine_Update{
 	            window_size={w, h},

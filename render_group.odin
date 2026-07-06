@@ -6,6 +6,7 @@ import "core:log"
 import "core:math/linalg"
 import "core:slice"
 import "odinlib:util"
+import "base:runtime"
 
 Rectf :: util.Rectf
 
@@ -33,13 +34,15 @@ RG_Clear :: struct #align(4) {
 	color: Color4b,
 }
 
-rg_clear :: proc(color: Color4b) {
-	append(&game.render_group.buffer, RG_Entry{
+rg_clear :: proc(color: Color4b, loc := #caller_location) {
+	entry := RG_Entry{
 		type=.Clear,
 		data={
 			clear=RG_Clear{color=color},
-		}
-	})
+		},
+		loc=loc,
+	}
+	rg_push(entry, loc)
 }
 
 RG_Rect :: struct #align(4) {
@@ -47,8 +50,8 @@ RG_Rect :: struct #align(4) {
 	color: Color4b,
 }
 
-rg_stroke_rect :: proc(rect: Rect, color: Color4b) {
-	append(&game.render_group.buffer, RG_Entry {
+rg_stroke_rect :: proc(rect: Rect, color: Color4b, loc := #caller_location) {
+	entry := RG_Entry {
 		type=.Stroke_Rect,
 		data={
 			rect=RG_Rect{
@@ -56,11 +59,12 @@ rg_stroke_rect :: proc(rect: Rect, color: Color4b) {
 				color=color,
 			}
 		}
-	})
+	}
+	rg_push(entry, loc)
 }
 
-rg_fill_rect :: proc(rect: Rect, color: Color4b) {
-	append(&game.render_group.buffer, RG_Entry {
+rg_fill_rect :: proc(rect: Rect, color: Color4b, loc := #caller_location) {
+	entry := RG_Entry {
 		type=.Fill_Rect,
 		data={
 			rect=RG_Rect{
@@ -68,7 +72,8 @@ rg_fill_rect :: proc(rect: Rect, color: Color4b) {
 				color=color,
 			}
 		}
-	})
+	}
+	rg_push(entry, loc)
 }
 
 Blit_Flag :: enum {
@@ -87,7 +92,8 @@ Rect_i16 :: struct {
 // TODO: Use smaller data types
 RG_Blit :: struct #align(4) {
 	offset: vec2,
-    src_rect, dst_rect: Maybe(Rect),
+    src_rect : Maybe(Rect),
+    dst_dims: Maybe(vec2),
     flip: [2]bool,
     // TODO:
     // offset: [2]i16,
@@ -98,37 +104,37 @@ RG_Blit :: struct #align(4) {
 rg_blit :: proc(
 	offset: vec2,
 	src_rect: Maybe(Rect) = nil,
-	flip: [2]bool = {})
+	flip: [2]bool = {},
+	loc := #caller_location)
 {
-	append(&game.render_group.buffer,
-		RG_Entry{
-			type=.Blit,
-			blit=RG_Blit {
-		    	offset=offset,
-		    	src_rect=src_rect,
-		    	flip=flip,
-			}
+	entry := RG_Entry{
+		type=.Blit,
+		blit=RG_Blit {
+	    	offset=offset,
+	    	src_rect=src_rect,
+	    	flip=flip,
 		}
-	)
+	}
+	rg_push(entry, loc)
 }
 
 rg_blit_scaled :: proc(
 	offset: vec2,
 	src_rect: Maybe(Rect) = nil,
-	dst_rect: Maybe(Rect) = nil,
-	flip: [2]bool = {})
+	dst_dims: Maybe(vec2) = nil,
+	flip: [2]bool = {},
+	loc := #caller_location)
 {
-	append(&game.render_group.buffer,
-		RG_Entry {
-			type=.Blit_Scaled,
-			blit=RG_Blit {
-		    	offset=offset,
-		    	src_rect=src_rect,
-				dst_rect=dst_rect,
-		    	flip=flip,
-			}
+	entry := RG_Entry {
+		type=.Blit_Scaled,
+		blit=RG_Blit {
+	    	offset=offset,
+	    	src_rect=src_rect,
+			dst_dims=dst_dims,
+	    	flip=flip,
 		}
-	)
+	}
+	rg_push(entry, loc)
 }
 
 RG_Palette :: struct #align(4) {
@@ -136,16 +142,18 @@ RG_Palette :: struct #align(4) {
 	color: Color4b,
 }
 
-rg_palette :: proc(idx: i32, color: Color4b) {
-	append(&game.render_group.buffer, RG_Entry{type=.Palette, palette=RG_Palette{idx=idx, color=color}})
+rg_palette :: proc(idx: i32, color: Color4b, loc := #caller_location) {
+	entry := RG_Entry{type=.Palette, palette=RG_Palette{idx=idx, color=color}}
+	rg_push(entry, loc)
 }
 
 RG_Texture :: struct #align(4) {
 	texture: Pixmap,
 }
 
-rg_texture :: proc(texture: Pixmap) {
-	append(&game.render_group.buffer, RG_Entry{ type=.Texture, texture=RG_Texture{texture=texture}})
+rg_texture :: proc(texture: Pixmap, loc := #caller_location) {
+	entry := RG_Entry{ type=.Texture, texture=RG_Texture{texture=texture}}
+	rg_push(entry, loc)
 }
 
 RG_Grid :: struct {
@@ -154,8 +162,9 @@ RG_Grid :: struct {
 	color: Color4f,
 }
 
-rg_grid :: proc(rect: Rect, cell_size: vec2f, color: Color4f) {
-    append(&game.render_group.buffer, RG_Entry {type=.Grid, grid=RG_Grid{rect=rect, cell_size=cell_size, color=color}})
+rg_grid :: proc(rect: Rect, cell_size: vec2f, color: Color4f, loc := #caller_location) {
+    entry := RG_Entry {type=.Grid, grid=RG_Grid{rect=rect, cell_size=cell_size, color=color}}
+    rg_push(entry, loc)
 }
 
 RG_Entry_Type :: enum i32 {
@@ -179,11 +188,15 @@ RG_Entry :: struct {
 		texture: RG_Texture,
         grid: RG_Grid,
 	},
+	loc: runtime.Source_Code_Location,
 }
 
-rg_push :: #force_inline proc(entry: RG_Entry) {
+@(private)
+rg_push :: #force_inline proc(entry: RG_Entry, loc := #caller_location) {
 	// TODO: Make render commands variable length to reduce memory use
-	assert(append(&game.render_group.buffer, entry) != 0)
+	entry := entry
+	entry.loc = loc
+	log.assertf(append(&game.render_group.buffer, entry) != 0, "render group buffer full! %v not added", entry.loc)
 }
 
 // Output render group to pixmap
@@ -191,16 +204,16 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
 	rg := &game.render_group
 	for cmd in rg.buffer {
 		switch cmd.type {
-        case .Palette:
-        	assert(cmd.palette != {})
-       		rg.palette[cmd.palette.idx] = cmd.palette.color
         case .Clear:
-            color_u32 := util.pack_color_4b(cmd.clear.color, target_pixmap.pixel_format)
+	        color_u32 := util.pack_color_4b(cmd.clear.color, target_pixmap.format)
 			pixels := cast([^]ColorU32)target_pixmap.pixels
 			area := target_pixmap.w * target_pixmap.h
             slice.fill(pixels[:area], color_u32)
+        case .Palette:
+        	assert(cmd.palette != {})
+       		rg.palette[cmd.palette.idx] = cmd.palette.color
         case .Blit:
-	        if rg.texture.bytes_per_pixel == 4 {
+	        if rg.texture.format.bytes_per_pixel == 4 {
 		        blit(
 	                target_pixmap,
 	                rg.texture,
@@ -208,7 +221,7 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
 	                cmd.blit.src_rect,
 	                cmd.blit.flip,
 	            )
-			} else if rg.texture.bytes_per_pixel == 1 {
+			} else if rg.texture.format.bytes_per_pixel == 1 {
 				blit_indexed(
 	                target_pixmap,
 	                rg.texture,
@@ -219,13 +232,25 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
             	)
 			}
         case .Blit_Scaled:
-        	blit_scaled(
-                target_pixmap,
-                rg.texture,
-                cast(vec2)cmd.blit.offset,
-                cmd.blit.src_rect,
-                cmd.blit.dst_rect
-            )
+            if rg.texture.format.bytes_per_pixel == 4 {
+            // FIXME: make this use dst_dims correctly
+	            blit_scaled(
+                    target_pixmap,
+                    rg.texture,
+                    cast(vec2)cmd.blit.offset,
+                    cmd.blit.src_rect,
+                    Rect{cmd.blit.offset.x, cmd.blit.offset.y, cmd.blit.dst_dims.?.x, cmd.blit.dst_dims.?.y},
+                )
+            } else if rg.texture.format.bytes_per_pixel == 1 {
+                blit_scaled_indexed(
+                    target_pixmap,
+                    rg.texture,
+                    &rg.palette,
+                    cast(vec2)cmd.blit.offset,
+                    cmd.blit.src_rect,
+                    cmd.blit.dst_dims,
+                )
+            }
         case .Fill_Rect:
             fill_rect_f(target_pixmap, cmd.rect.rect, util.color4b_to_4f(cmd.rect.color))
         case .Stroke_Rect:
@@ -234,7 +259,7 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
         	rg.texture = cmd.texture.texture
         case .Grid:
             pixels := cast([^]ColorU32)target_pixmap.pixels
-            line_color := util.pack_color_4f(cmd.grid.color, target_pixmap.pixel_format)
+            line_color := util.pack_color_4f(cmd.grid.color, target_pixmap.format)
             x := cast(f32)cmd.grid.rect.x
             max_x := cast(f32)cmd.grid.rect.x + cast(f32)cmd.grid.rect.w
         	x_inc := cmd.grid.cell_size.x

@@ -65,30 +65,19 @@ load_bmp_indexed :: proc(
     pixmap := util.make_pixmap(
     	cast(i32)bmp_header.width,
      	cast(i32)bmp_header.height,
-      	{},
-       	bytes_per_pixel=1
+      	format={bytes_per_pixel=1}
     )
     w, h := cast(int)bmp_header.width, cast(int)bmp_header.height
     // TODO: optimize: maybe try os.read() entire image data then flip imag in-place
     pixels := cast([^]u8)pixmap.pixels
-    when false {
-	    for y := h - 1; y >= 0; y -= 1 {
-	    	for x in 0..<w {
-	     		b: [1]u8
-	     		os.read(file, b[:])
-	    		pixels[y * w + x] = b[0]
-	     	}
-	    }
-    } else {
-	    os.read_ptr(file, pixmap.pixels, w*h)
-		for y in 0..<h/2 {
-			y_inv := (h - 1) - y
-			for x in 0..<w {
-				top := &pixels[y * w + x]
-				bottom := &pixels[y_inv * w + x]
-				top^, bottom^ = bottom^, top^
-			}
+    os.read_ptr(file, pixmap.pixels, w*h)
+	for y in 0..<h/2 {
+		y_inv := (h - 1) - y
+		for x in 0..<w {
+			top := &pixels[y * w + x]
+			bottom := &pixels[y_inv * w + x]
+			top^, bottom^ = bottom^, top^
 		}
-    }
+	}
     return pixmap, true
 }

@@ -8,7 +8,7 @@ Repeat_Mode :: enum {
 	Ping_Pong,
 }
 
-Sprite_Animatior :: struct {
+Sprite_Animator :: struct {
 	frame_index, start_frame, end_frame: int,
 	frame_interval: time.Duration,
 	lag: time.Duration,
@@ -18,7 +18,7 @@ Sprite_Animatior :: struct {
 	inc: int,
 }
 
-anim_update :: proc(anim: ^Sprite_Animatior, current_tick: time.Tick) {
+anim_update :: proc(anim: ^Sprite_Animator, current_tick: time.Tick) {
 	assert(anim.start_frame < anim.end_frame)
 	if anim.last_frame_tick != cast(time.Tick){} {
 		duration := time.tick_diff(anim.last_frame_tick, current_tick)
@@ -31,7 +31,7 @@ anim_update :: proc(anim: ^Sprite_Animatior, current_tick: time.Tick) {
 	anim.last_frame_tick = current_tick
 }
 
-anim_advance :: proc(anim: ^Sprite_Animatior) {
+anim_advance :: proc(anim: ^Sprite_Animator) {
 	anim.frame_index += anim.inc
 	if anim.frame_index > anim.end_frame {
 		switch anim.repeat_mode {
