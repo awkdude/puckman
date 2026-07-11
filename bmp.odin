@@ -30,6 +30,7 @@ BMP_Header :: struct #packed {
 load_bmp_indexed :: proc(
     path: string,
     palette: ^Palette = nil,
+    pixel_format: Maybe(util.Pixel_Format) = nil,
     allocator := context.allocator) -> (Pixmap, bool)
 {
     file, open_err := os.open(path)
@@ -52,13 +53,15 @@ load_bmp_indexed :: proc(
     palette_quad: [256]Color_Quad
 	os.read_slice(file, palette_quad[:])
     if palette != nil {
-    	for &entry, i in palette[:] {
-   			entry = util.Color4b {
+    	pixel_format, ok := pixel_format.?
+     	assert(ok)
+	   	for &entry, i in palette[:] {
+   			entry = util.pack_color(util.Color4b {
    				palette_quad[i].r,
    				palette_quad[i].g,
    				palette_quad[i].b,
    				255,
-      		}
+      		}, pixel_format)
      	}
     }
 

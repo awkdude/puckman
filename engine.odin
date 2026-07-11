@@ -29,13 +29,13 @@ THUMBSTICK_THRESHOLD :: 0.5
 
 CELL_SIZE: i32 : 8
 CELL_DIMS :: vec2{CELL_SIZE, CELL_SIZE}
-ROWS: i32 : 32
-COLS: i32 : 32
+COLS: i32 : 28
+ROWS: i32 : 36
 PLAYER_SIZE_CELLS :: 2
 PLAYER_SIZE: i32 : PLAYER_SIZE_CELLS * CELL_SIZE
 PLAYER_DIMS :: vec2{PLAYER_SIZE, PLAYER_SIZE}
-INTERN_FRAMEBUFFER_WIDTH  :: CELL_SIZE * ROWS
-INTERN_FRAMEBUFFER_HEIGHT :: CELL_SIZE * COLS
+INTERN_FRAMEBUFFER_WIDTH  :: CELL_SIZE * COLS
+INTERN_FRAMEBUFFER_HEIGHT :: CELL_SIZE * ROWS
 INTERN_FRAMEBUFFER_DIMS :: vec2{INTERN_FRAMEBUFFER_WIDTH, INTERN_FRAMEBUFFER_HEIGHT}
 
 PACMAN_RIGHT_FRAMES := [?]i32 {0, 2, 4}
@@ -73,11 +73,14 @@ Engine_Context :: struct {
     do_draw_grid: bool,
     position: vec2f,
     player_direction, player_target_direction: Direction,
+    next_tile_blocked: bool,
     internal_framebuffer: []ColorU32, // [512*512]u8,
     // Row-major
     tile_map: [ROWS*COLS]Tile_Type,
     input_state: util.Input_State,
     player_spritesheet:  util.Pixmap,
+    player_score: i32,
+    player_num_lives: i32,
     tile_spritesheet: Pixmap,
     text_spritesheet: Pixmap,
     ghost_spritesheet: Pixmap,
@@ -91,6 +94,8 @@ Engine_Context :: struct {
     palette: Palette,
     frightened_sim_tick: int,
     paused: bool,
+    // DELETE:
+    test_pixmap: Pixmap,
 
 
     module: struct {
@@ -123,7 +128,7 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     game = new(Engine_Context)
     game.running = true
     game.init_info = init_info
-    game.window_size_index = len(window_sizes) - 1
+    game.window_size_index = 2
     init_info.platform_command_proc(util.Platform_Command{
     	type=.Rename_Window,
     	title="Puckman"
@@ -146,6 +151,7 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     })
 
     game.player_direction = .Left
+    game.player_num_lives = 3
 
     game.render_group.palette = game.palette
 
@@ -156,9 +162,12 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     assert(load_ok)
     game.text_spritesheet, load_ok = load_bmp_indexed("textures/text.bmp")
     assert(load_ok)
-    game.tile_spritesheet, load_ok = load_bmp_indexed("textures/tiles.bmp", &game.palette)
+    game.tile_spritesheet, load_ok = load_bmp_indexed("textures/tiles.bmp", &game.palette, game.init_info.pixel_format)
     assert(load_ok)
     game.ghost_spritesheet, load_ok = load_bmp_indexed("textures/ghost.bmp")
+    assert(load_ok)
+
+    game.test_pixmap, load_ok = file_load.load_png("resources/quadrant.png", game.init_info.pixel_format)
     assert(load_ok)
 
     try_setup_level()
@@ -202,7 +211,7 @@ update_world :: proc() {
     player_tile_index := get_tile_index_from_position(cast(vec2)game.player_position)
     tile_pos := get_position_from_tile_index(player_tile_index)
     current_tile_center := tile_pos + (CELL_SIZE/2)
-    next_tile := get_adjacent_tile_type(player_tile_index, game.player_direction)
+    next_tile, ok := get_adjacent_tile_type(player_tile_index, game.player_direction)
     next_target_tile, target_ok := get_adjacent_tile_type(player_tile_index, game.player_target_direction)
     if game.player_target_direction != nil {
         if next_target_tile in PASSABLE_TILES {
@@ -219,17 +228,20 @@ update_world :: proc() {
     }
     game.player_position += SPEED * DIRECTION_VECTORS[game.player_direction]
     if next_tile not_in PASSABLE_TILES {
+    	game.next_tile_blocked = true
         #partial switch game.player_direction {
         case .Left:
             game.player_position.x = max(cast(f32)current_tile_center.x, game.player_position.x)
         case .Right:
             game.player_position.x = min(cast(f32)current_tile_center.x, game.player_position.x)
         case .Up:
+        	log.debug("UP BLOCKED!")
             game.player_position.y = max(cast(f32)current_tile_center.y, game.player_position.y)
         case .Down:
             game.player_position.y = min(cast(f32)current_tile_center.y, game.player_position.y)
         }
     } else {
+	   	game.next_tile_blocked = false
 	    anim_update(&game.anim, game.last_frame_tick)
     }
     player_is_horz := game.player_direction in bit_set[Direction]{.Left, .Right}
@@ -239,8 +251,10 @@ update_world :: proc() {
     } else if player_is_vert {
         game.player_position.x = (f32)(tile_pos.x + CELL_SIZE/2)
     }
-    max_x := (f32)(CELL_SIZE * COLS - PLAYER_SIZE)
-    max_y := (f32)(CELL_SIZE * ROWS - PLAYER_SIZE)
+    min_x := cast(f32)0
+    min_y := cast(f32)CELL_SIZE*2
+    max_x := (f32)(CELL_SIZE * (COLS + 1))
+    max_y := (f32)(CELL_SIZE * (ROWS - 2))
     if game.player_position.x < 0 {
         game.player_position.x = max_x
     } else if game.player_position.x > max_x  {
@@ -274,6 +288,8 @@ update_world :: proc() {
 }
 
 eng_update_render :: proc(update_info: Engine_Update) -> bool {
+	// DELETE:
+	pacman_ptr = game.player_spritesheet.pixels
     if game == nil {
         return true
     }
@@ -318,45 +334,24 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
     v := (u8)(util.time_sin() * 255.0)
     rg_palette(1, {v, v, v, 255})
 
-    rg_texture(game.tile_spritesheet)
-    if game.do_draw_grid {
-    	for tile, i in game.tile_map {
-            tile_color := color_cyan_4b if tile in PASSABLE_TILES else color_grey_4b
-	    	if tile != .None && tile != .Unused {
-				pos := CELL_SIZE * get_tile_coord_from_tile_index(i)
-		        rg_fill_rect(
-		         	Rect{
-                        pos.x,
-                        pos.y,
-                        CELL_SIZE,
-                        CELL_SIZE,
-                    },
-                    tile_color,
-		        )
-	     	}
-	    }
-    } else {
-	    for tile, i in game.tile_map {
-	    	if tile != .None && tile != .Unused {
-		    	tile_sprite := TILE_SPRITES[tile]
-		        rg_blit(
-		         	CELL_SIZE * get_tile_coord_from_tile_index(i),
-		          	tile_sprite.rect,
-		           	tile_sprite.flip,
-		        )
-	     	}
-	    }
-    }
     log.debug(len(game.render_group.buffer))
+    draw_maze()
     draw_player()
     draw_ghosts()
     text := fmt.tprintf("GRID: %v", "ON" if game.do_draw_grid else "OFF")
     if game.paused {
     	draw_text("PAUSED!", get_position_from_grid_coord({13,13}))
     }
+    player_tile_index := get_tile_index_from_position(cast(vec2)game.player_position)
+    tile_pos := get_tile_coord_from_tile_index(player_tile_index)
+   	text = fmt.tprintf("(%v, %v)", tile_pos.x, tile_pos.y)
+    draw_text(text, get_position_from_grid_coord({0, ROWS-1}))
+    draw_text("HIGH SCORE", get_position_from_grid_coord({11, 0}))
+    score_text := fmt.tprintf("%v", game.player_score)
+    draw_text(score_text, get_position_from_grid_coord({5, 1}))
     rg_to_output(fb_pixmap)
     rg_texture(fb_pixmap)
-    rg_blit_scaled(
+    rg_blit(
      	{0, 0},
     	dst_dims=vec2{
         	game.update_info.framebuffer.w,
@@ -376,6 +371,13 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
   		)
     }
     draw_text("This is on the real framebuffer", {50, 50}, 1.0 + util.time_sin())
+    clip_rect := Rect{
+        cast(i32)framebuffer_dims.x/4,
+        cast(i32)framebuffer_dims.y/4,
+        cast(i32)framebuffer_dims.x/4,
+        cast(i32)framebuffer_dims.y/4,
+    }
+    rg_stroke_rect(clip_rect, color_green_4b)
     rg_to_output(game.update_info.framebuffer)
     if false && game.module.update_render != nil {
         game.module.update_render()
@@ -396,7 +398,7 @@ eng_handle_event :: proc(window_event: util.Window_Event) {
             switch window_event.key.keycode{
             case util.KEY_ESCAPE:
             	game.paused = !game.paused
-            case util.KEY_F4:
+            case util.KEY_F4, util.KEY_F5:
                 game.running = false
             case util.KEY_SPACE:
             	game.do_draw_grid = !game.do_draw_grid
@@ -485,19 +487,22 @@ get_adjacent_tile_type :: proc "contextless" (#any_int tile_idx: i32, direction:
     case .None:
         ok = false
     case .Left:
-        ok = adj_idx > 0
         adj_idx = tile_idx-1
+        ok = adj_idx > 0
     case .Right:
-        ok = adj_idx < COLS-1
         adj_idx = tile_idx+1
+        ok = (adj_idx % COLS) < COLS-1
     case .Up:
-        ok = adj_idx >= COLS
         adj_idx = tile_idx-COLS
+        ok = adj_idx >= COLS
     case .Down:
-        ok = adj_idx <= (COLS-1)*(ROWS-1)
         adj_idx = tile_idx+COLS
+        ok = adj_idx <= (COLS-1)*(ROWS-1)
     }
-    return game.tile_map[adj_idx], ok
+    if ok {
+	    return game.tile_map[adj_idx], true
+    }
+    return nil, false
 }
 
 get_tile_coord_from_tile_index :: #force_inline proc "contextless" (#any_int idx: i32) -> vec2 {
@@ -519,6 +524,38 @@ get_position_from_tile_index :: #force_inline proc "contextless" (#any_int idx: 
 }
 
 TEXT_SPRITESHEET_ORDER :: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!:.,?\"-/%=()"
+
+draw_maze :: proc() {
+    rg_texture(game.tile_spritesheet)
+    if game.do_draw_grid {
+    	for tile, i in game.tile_map {
+            tile_color := color_cyan_4b if tile in PASSABLE_TILES else color_grey_4b
+	    	if tile != .None && tile != .Unused {
+				pos := CELL_SIZE * get_tile_coord_from_tile_index(i)
+		        rg_fill_rect(
+		         	Rect{
+                        pos.x,
+                        pos.y,
+                        CELL_SIZE,
+                        CELL_SIZE,
+                    },
+                    tile_color,
+		        )
+	     	}
+	    }
+    } else {
+	    for tile, i in game.tile_map {
+	    	if tile != .None && tile != .Unused {
+		    	tile_sprite := TILE_SPRITES[tile]
+		        rg_blit(
+		         	CELL_SIZE * get_tile_coord_from_tile_index(i),
+		          	tile_sprite.rect,
+		           	tile_sprite.flip,
+		        )
+	     	}
+	    }
+    }
+}
 
 draw_player :: proc() {
 	player_frame: i32
@@ -550,7 +587,7 @@ draw_player :: proc() {
     } else {
 	    rg_texture(game.player_spritesheet)
 	    rg_blit(
-	   	cast(vec2)game.player_position - PLAYER_DIMS/2,
+            cast(vec2)game.player_position - PLAYER_DIMS/2,
 	    	Rect{
 		      	player_frame * PLAYER_SIZE,
 		       	0,
@@ -559,6 +596,21 @@ draw_player :: proc() {
 	     	},
 			{game.player_direction == .Left, game.player_direction == .Up},
 	 	)
+    }
+    // p := cast(vec2)game.player_position - PLAYER_DIMS/2
+    // rg_stroke_rect(
+    // 	Rect {
+    //  		p.x,
+    //    		p.y,
+    //      	PLAYER_SIZE,
+    //      	PLAYER_SIZE,
+    //  	},
+    //  	color_red_4b,
+    // )
+    // Draw lives at bottom
+    for i in 0..<game.player_num_lives {
+    	// rg_blit({3*CELL_SIZE+i*PLAYER_SIZE, (ROWS-2)*CELL_SIZE}, {0, 0, PLAYER_SIZE, PLAYER_SIZE})
+    	blit_sprite(.Big, {3*CELL_SIZE+i*PLAYER_SIZE, (ROWS-2)*CELL_SIZE}, {0, 0})
     }
 }
 
@@ -647,10 +699,10 @@ draw_text :: proc(text: string, offset: vec2, scale: f32 = 1.0, loc := #caller_l
 			CELL_SIZE,
 		}
 		if c != ' ' {
-			rg_blit_scaled(
+			rg_blit(
 				{(cast(i32)i * scaled_cell_size) + offset.x, offset.y},
 				rect,
-				vec2{scaled_cell_size, scaled_cell_size},
+				dst_dims=vec2{scaled_cell_size, scaled_cell_size},
 			)
 		}
 	}
@@ -669,4 +721,15 @@ get_text_sprite_xoffset :: proc(target_c: rune) -> i32 {
 	}
 	// Returns last character which is placeholder
 	return cast(i32)len(TEXT_SPRITESHEET_ORDER) * CELL_SIZE
+}
+
+// Since most blits have a src_rect dimensions of PLAYER_SIZE or CELL_SIZE
+blit_sprite :: #force_inline proc(
+	sprite_size: enum{Big, Small},
+	offset, src_rect_offset: vec2,
+ 	flip: [2]bool = {},
+  	loc := #caller_location)
+{
+	dim_size := PLAYER_SIZE if sprite_size == .Big else CELL_SIZE
+	rg_blit(offset, Rect{src_rect_offset.x, src_rect_offset.y, dim_size, dim_size}, flip, loc=loc)
 }

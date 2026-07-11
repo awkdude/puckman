@@ -43,6 +43,7 @@ try_setup_level :: proc(override: bool = false) {
     for ; data_i < len(level_data); data_i += 1 {
         if tile_i >= num_tiles do break
         tile: Tile_Type
+        // FIXME:
         switch level_data[data_i] {
         case '0', ' ':
         	tile = .None

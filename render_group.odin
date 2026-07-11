@@ -7,10 +7,11 @@ import "core:math/linalg"
 import "core:slice"
 import "odinlib:util"
 import "base:runtime"
+import "base:intrinsics"
 
 Rectf :: util.Rectf
 
-Palette :: [32]Color4b
+Palette :: [32]ColorU32
 
 // NOTE: Concern that Palette makes each entry 128 bytes
 
@@ -20,6 +21,9 @@ white_texture_data := []ColorU32 {
 	0xffffffff,
 	0xffffffff,
 }
+
+real_framebuffer_ptr: rawptr
+pacman_ptr: rawptr
 
 // Queue of rendering commands
 Render_Group :: struct {
@@ -94,6 +98,7 @@ RG_Blit :: struct #align(4) {
 	offset: vec2,
     src_rect : Maybe(Rect),
     dst_dims: Maybe(vec2),
+    clip_rect: Maybe(Rect),
     flip: [2]bool,
     // TODO:
     // offset: [2]i16,
@@ -105,6 +110,8 @@ rg_blit :: proc(
 	offset: vec2,
 	src_rect: Maybe(Rect) = nil,
 	flip: [2]bool = {},
+    dst_dims: Maybe(vec2) = nil,
+    clip_rect: Maybe(Rect) = nil,
 	loc := #caller_location)
 {
 	entry := RG_Entry{
@@ -112,25 +119,8 @@ rg_blit :: proc(
 		blit=RG_Blit {
 	    	offset=offset,
 	    	src_rect=src_rect,
-	    	flip=flip,
-		}
-	}
-	rg_push(entry, loc)
-}
-
-rg_blit_scaled :: proc(
-	offset: vec2,
-	src_rect: Maybe(Rect) = nil,
-	dst_dims: Maybe(vec2) = nil,
-	flip: [2]bool = {},
-	loc := #caller_location)
-{
-	entry := RG_Entry {
-		type=.Blit_Scaled,
-		blit=RG_Blit {
-	    	offset=offset,
-	    	src_rect=src_rect,
-			dst_dims=dst_dims,
+            dst_dims=dst_dims,
+            clip_rect=clip_rect,
 	    	flip=flip,
 		}
 	}
@@ -174,7 +164,6 @@ RG_Entry_Type :: enum i32 {
     Stroke_Rect,
     Texture,
     Blit,
-    Blit_Scaled,
     Grid,
 }
 
@@ -211,46 +200,33 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
             slice.fill(pixels[:area], color_u32)
         case .Palette:
         	assert(cmd.palette != {})
-       		rg.palette[cmd.palette.idx] = cmd.palette.color
+       		rg.palette[cmd.palette.idx] = util.pack_color(cmd.palette.color, target_pixmap.format)
         case .Blit:
+        	if rg.texture.pixels == pacman_ptr {
+         		// intrinsics.debug_trap()
+	        }
 	        if rg.texture.format.bytes_per_pixel == 4 {
-		        blit(
+				blit(
 	                target_pixmap,
 	                rg.texture,
 	                cmd.blit.offset,
 	                cmd.blit.src_rect,
+                    cmd.blit.dst_dims,
+                    cmd.blit.clip_rect,
 	                cmd.blit.flip,
-	            )
+            	)
 			} else if rg.texture.format.bytes_per_pixel == 1 {
 				blit_indexed(
+					&rg.palette,
 	                target_pixmap,
 	                rg.texture,
-					&rg.palette,
 	                cmd.blit.offset,
 	                cmd.blit.src_rect,
+                    cmd.blit.dst_dims,
+                    cmd.blit.clip_rect,
 	                cmd.blit.flip,
             	)
 			}
-        case .Blit_Scaled:
-            if rg.texture.format.bytes_per_pixel == 4 {
-            // FIXME: make this use dst_dims correctly
-	            blit_scaled(
-                    target_pixmap,
-                    rg.texture,
-                    cast(vec2)cmd.blit.offset,
-                    cmd.blit.src_rect,
-                    Rect{cmd.blit.offset.x, cmd.blit.offset.y, cmd.blit.dst_dims.?.x, cmd.blit.dst_dims.?.y},
-                )
-            } else if rg.texture.format.bytes_per_pixel == 1 {
-                blit_scaled_indexed(
-                    target_pixmap,
-                    rg.texture,
-                    &rg.palette,
-                    cast(vec2)cmd.blit.offset,
-                    cmd.blit.src_rect,
-                    cmd.blit.dst_dims,
-                )
-            }
         case .Fill_Rect:
             fill_rect_f(target_pixmap, cmd.rect.rect, util.color4b_to_4f(cmd.rect.color))
         case .Stroke_Rect:
@@ -278,5 +254,6 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
             }
         }
     }
+    rg.texture = {}
     clear(&rg.buffer)
 }

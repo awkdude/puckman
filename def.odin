@@ -63,6 +63,7 @@ Ghost_Actor :: struct {
 	position: vec2f,
 	direction: Direction,
 	state: Ghost_State,
+	target_tile_index: i32,
 }
 
 

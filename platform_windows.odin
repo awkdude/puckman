@@ -294,6 +294,7 @@ update_framebuffer_win32 :: proc() {
 	win.SelectObject(memory_device_context, cast(win.HGDIOBJ)bitmap_handle)
 	win.ReleaseDC(window_handle, device_context)
 	stride := ((((bitmap_info.bmiHeader.biWidth * cast(i32)bitmap_info.bmiHeader.biBitCount) + 31) & ~cast(i32)31) >> 3)
+    framebuffer_pixmap.pitch = stride
 }
 
 win32_cursor: cstring
