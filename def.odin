@@ -12,19 +12,24 @@ Tile_Type :: enum u8 {
     Wall_Top_Right,
     Wall_Bottom_Left,
     Wall_Bottom_Right,
-    Border_Top,
-    Border_Bottom,
-    Border_Left,
-    Border_Right,
-    Border_Sharp_Top_Left,
-    Border_Sharp_Top_Right,
-    Border_Sharp_Bottom_Left,
-    Border_Sharp_Bottom_Right,
-    Border_Top_Left,
-    Border_Top_Right,
-    Border_Bottom_Left,
-    Border_Bottom_Right,
+    Double_Wall_Top,
+    Double_Wall_Bottom,
+    Double_Wall_Left,
+    Double_Wall_Right,
+    Double_Wall_Sharp_Top_Left,
+    Double_Wall_Sharp_Top_Right,
+    Double_Wall_Sharp_Bottom_Left,
+    Double_Wall_Sharp_Bottom_Right,
+    Double_Wall_Top_Left,
+    Double_Wall_Top_Right,
+    Double_Wall_Bottom_Left,
+    Double_Wall_Bottom_Right,
+    Double_Inner_Wall_Top_Left,
+    Double_Inner_Wall_Top_Right,
+    Double_Inner_Wall_Bottom_Left,
+    Double_Inner_Wall_Bottom_Right,
     Ghost_Pass,
+    Slow_Zone,
     Unused,
 }
 
@@ -71,7 +76,8 @@ PASSABLE_TILES :: bit_set[Tile_Type] {
 	.Dot,
 	.Pellet,
 	.None,
-	.Unused
+	.Unused,
+	.Slow_Zone,
 }
 
 GHOST_PASSABLE_TILES :: bit_set[Tile_Type] {
@@ -136,7 +142,7 @@ GHOST_SPRITES := [Direction][2]Tile_Sprite {
 }
 
 
-TILE_SPRITES := [Tile_Type]Tile_Sprite {
+TILE_SPRITES := #partial [Tile_Type]Tile_Sprite {
     .None={},
     .Unused={},
     .Dot={
@@ -174,49 +180,49 @@ TILE_SPRITES := [Tile_Type]Tile_Sprite {
         rect=Rect{2*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={false, true},
     },
-    .Border_Bottom={
+    .Double_Wall_Bottom={
         rect=Rect{4*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={false, false},
     },
-    .Border_Top={
+    .Double_Wall_Top={
         rect=Rect{4*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={false, true},
     },
-    .Border_Left={
+    .Double_Wall_Left={
         rect=Rect{5*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={true, false},
     },
-    .Border_Right={
+    .Double_Wall_Right={
         rect=Rect{5*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={false, false},
     },
-    .Border_Bottom_Right={
+    .Double_Wall_Bottom_Right={
         rect=Rect{6*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
     },
-    .Border_Bottom_Left={
+    .Double_Wall_Bottom_Left={
         rect=Rect{6*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={true, false},
     },
-    .Border_Top_Left={
+    .Double_Wall_Top_Left={
         rect=Rect{6*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={true, true},
     },
-    .Border_Top_Right={
+    .Double_Wall_Top_Right={
         rect=Rect{6*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={false, true},
     },
-    .Border_Sharp_Bottom_Right={
+    .Double_Wall_Sharp_Bottom_Right={
         rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
     },
-    .Border_Sharp_Bottom_Left={
+    .Double_Wall_Sharp_Bottom_Left={
         rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={true, false},
     },
-    .Border_Sharp_Top_Left={
+    .Double_Wall_Sharp_Top_Left={
         rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={true, true},
     },
-    .Border_Sharp_Top_Right={
+    .Double_Wall_Sharp_Top_Right={
         rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={false, true},
     },

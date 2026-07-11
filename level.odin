@@ -3,6 +3,7 @@ package main
 import "core:log"
 import "core:os"
 import "core:time"
+import "core:unicode"
 
 last_level_modify_time: time.Time
 
@@ -21,6 +22,7 @@ try_setup_level :: proc(override: bool = false) {
     did_place_pacman := false
     did_place_ghosts: [Ghost_Type]bool
     data_i := 0
+    // Skip comments
     if level_data[data_i] == '#' {
     	data_i += 1
     	for {
@@ -51,48 +53,58 @@ try_setup_level :: proc(override: bool = false) {
         	tile = .Dot
         case '*':
         	tile = .Pellet
-        case 'l':
-            tile = .Wall_Left
-        case 'r':
-            tile = .Wall_Right
-        case 't':
-            tile = .Wall_Top
-        case 'b':
-            tile = .Wall_Bottom
-        case '7':
-            tile = .Wall_Top_Left
         case '9':
+            tile = .Wall_Left
+        case 'a':
+            tile = .Wall_Right
+        case 'b':
+            tile = .Wall_Top
+        case 'c':
+            tile = .Wall_Bottom
+        case 'h':
+            tile = .Wall_Top_Left
+        case 'i':
             tile = .Wall_Top_Right
-        case '1':
+        case 'j':
             tile = .Wall_Bottom_Left
-        case '3':
+        case 'k':
             tile = .Wall_Bottom_Right
-        case 'Q':
-        	tile = .Border_Top_Left
-        case 'P':
-        	tile = .Border_Top_Right
-        case 'Z':
-        	tile = .Border_Bottom_Left
-        case 'M':
-        	tile = .Border_Bottom_Right
-        case 'q':
-        	tile = .Border_Sharp_Top_Left
-        case 'p':
-        	tile = .Border_Sharp_Top_Right
-        case 'z':
-        	tile = .Border_Sharp_Bottom_Left
-        case 'm':
-        	tile = .Border_Sharp_Bottom_Right
+        case 'd':
+        	tile = .Double_Wall_Top_Left
+        case 'e':
+        	tile = .Double_Wall_Top_Right
+        case 'f':
+        	tile = .Double_Wall_Bottom_Left
+        case 'g':
+        	tile = .Double_Wall_Bottom_Right
+        case '1':
+        	tile = .Double_Wall_Sharp_Top_Left
+        case '2':
+        	tile = .Double_Wall_Sharp_Top_Right
+        case '3':
+        	tile = .Double_Wall_Sharp_Bottom_Left
+        case '4':
+        	tile = .Double_Wall_Sharp_Bottom_Right
         case '+':
         	tile = .Ghost_Pass
-        case 'T':
-        	tile = .Border_Top
-        case 'B':
-        	tile = .Border_Bottom
-        case 'L':
-        	tile = .Border_Left
-        case 'R':
-        	tile = .Border_Right
+        case '7':
+        	tile = .Double_Wall_Top
+        case '8':
+        	tile = .Double_Wall_Bottom
+        case '5':
+        	tile = .Double_Wall_Left
+        case '6':
+        	tile = .Double_Wall_Right
+        case 'l':
+        	tile = .Double_Inner_Wall_Top_Left
+        case 'm':
+        	tile = .Double_Inner_Wall_Top_Right
+        case 'n':
+        	tile = .Double_Inner_Wall_Bottom_Left
+        case 'o':
+        	tile = .Double_Inner_Wall_Bottom_Right
+        case 'p':
+        	tile = .Slow_Zone
         case '!':
         	assert(!did_place_pacman, "Pacman starting marker appears more than once!")
          	game.player_position = cast(vec2f)get_position_from_tile_index(tile_i) + cast(vec2f)CELL_SIZE/2
@@ -114,16 +126,22 @@ try_setup_level :: proc(override: bool = false) {
         	game.ghosts[.Clyde].position = cast(vec2f)get_position_from_tile_index(tile_i) + cast(vec2f)CELL_SIZE/2
 	       	did_place_ghosts[.Clyde] = true
         case:
-            continue
+        	c := level_data[data_i]
+	       	if c != '\r' && c != '\n' {
+	        	tile_coord := get_tile_coord_from_tile_index(tile_i)
+	        	log.panicf("Unknown character: '%c' at %v", level_data[data_i], tile_coord)
+         	} else {
+          		continue
+          	}
         }
         game.tile_map[tile_i] = tile
         tile_i += 1
     }
     assert(cast(i32)tile_i == ROWS*COLS)
     assert(did_place_pacman, "Pac-man was not set in the level data")
-    assert(did_place_ghosts[.Blinky], "Blinky was not set in the level data")
-    assert(did_place_ghosts[.Pinky], "Pinky was not set in the level data")
-    assert(did_place_ghosts[.Inky], "Inky was not set in the level data")
-    assert(did_place_ghosts[.Clyde], "Clyde was not set in the level data")
+    // assert(did_place_ghosts[.Blinky], "Blinky was not set in the level data")
+    // assert(did_place_ghosts[.Pinky], "Pinky was not set in the level data")
+    // assert(did_place_ghosts[.Inky], "Inky was not set in the level data")
+    // assert(did_place_ghosts[.Clyde], "Clyde was not set in the level data")
     log.debug(tile_i)
 }

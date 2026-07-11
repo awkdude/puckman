@@ -131,31 +131,26 @@ blit_indexed :: proc(
     if flip.y {
         src_inc_y = -src_inc_y
     }
-    dstb.min.x = max(dstb.min.x, 0)
-    dstb.max.x = min(dstb.max.x, dst_pixmap.w)
-    dstb.min.y = max(dstb.min.y, 0)
-    dstb.max.y = min(dstb.max.y, dst_pixmap.h)
-    if clip_rect, ok := clip_rect.?; ok {
-        clip_box := util.rect_to_bbox(clip_rect)
-        if dstb.min.x < clip_box.min.x {
-            if flip.x {
-                srcb.max.x -= (clip_box.min.x - dstb.min.x)
-            } else {
-                srcb.min.x += (clip_box.min.x - dstb.min.x)
-            }
+    clip_rect := clip_rect.? or_else Rect{0, 0, dst_pixmap.w, dst_pixmap.h}
+    clip_box := util.rect_to_bbox(clip_rect)
+    if dstb.min.x < clip_box.min.x {
+        if flip.x {
+            srcb.max.x -= (clip_box.min.x - dstb.min.x)
+        } else {
+            srcb.min.x += (clip_box.min.x - dstb.min.x)
         }
-        if dstb.min.y < clip_box.min.y {
-            if flip.y {
-                srcb.max.y -= (clip_box.min.y - dstb.min.y)
-            } else {
-                srcb.min.y += (clip_box.min.y - dstb.min.y)
-            }
+    }
+    if dstb.min.y < clip_box.min.y {
+        if flip.y {
+            srcb.max.y -= (clip_box.min.y - dstb.min.y)
+        } else {
+            srcb.min.y += (clip_box.min.y - dstb.min.y)
         }
-        dstb = util.intersection_bbox(dstb, clip_box)
-        // Return if clip rect and dst rect don't intersect
-        if dstb.max.x < dstb.min.x || dstb.max.y < dstb.min.y {
-            return
-        }
+    }
+    dstb = util.intersection_bbox(dstb, clip_box)
+    // Return if clip rect and dst rect don't intersect
+    if dstb.max.x < dstb.min.x || dstb.max.y < dstb.min.y {
+        return
     }
     sy: f32 = cast(f32)srcb.max.y - 1 if flip.y else cast(f32)srcb.min.y
 

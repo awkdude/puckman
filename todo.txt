@@ -1,3 +1,5 @@
-[ ] Position tiles and characters
-[ ] Draw text string
-[ ] Make blitting indexed/paletized
+[x] Position tiles and characters
+[x] Draw text string
+[x] Make blitting indexed/paletized
+[ ] Make simple level editor
+[ ] Fix indexed flipped y blit

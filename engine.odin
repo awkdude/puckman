@@ -369,6 +369,7 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
            	cast(f32)CELL_SIZE * (framebuffer_dims / cast(vec2f)INTERN_FRAMEBUFFER_DIMS),
             color_green
   		)
+    } else {
     }
     draw_text("This is on the real framebuffer", {50, 50}, 1.0 + util.time_sin())
     clip_rect := Rect{
@@ -547,6 +548,9 @@ draw_maze :: proc() {
 	    for tile, i in game.tile_map {
 	    	if tile != .None && tile != .Unused {
 		    	tile_sprite := TILE_SPRITES[tile]
+				if tile_sprite.rect == {} {
+					tile_sprite.rect = Rect{10*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE}
+				}
 		        rg_blit(
 		         	CELL_SIZE * get_tile_coord_from_tile_index(i),
 		          	tile_sprite.rect,
