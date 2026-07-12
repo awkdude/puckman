@@ -1,5 +1,14 @@
 package main
 
+Debug_Mode :: enum {
+	None,
+	Grid,
+	Editor,
+}
+
+CHAR_TILE_MAP := "0123456789abcdefghijklmnopqrstuvwxyz"
+
+// TODO: Maybe rename this Wall_Tile_Type
 Tile_Type :: enum u8 {
     None,
     Dot,
@@ -29,8 +38,19 @@ Tile_Type :: enum u8 {
     Double_Inner_Wall_Bottom_Left,
     Double_Inner_Wall_Bottom_Right,
     Ghost_Pass,
-    Slow_Zone,
+    Slow_Zone, // TODO: remove this
     Unused,
+}
+
+Marker_Tile_Type :: enum u8 {
+	None,
+	Player_Start,
+	Blinky_Start,
+	Pinky_Start,
+	Inky_Start,
+	Clyde_Start,
+	Ghost_Decision,
+	Slow_Zone,
 }
 
 Direction :: enum {
@@ -142,14 +162,19 @@ GHOST_SPRITES := [Direction][2]Tile_Sprite {
 }
 
 
-TILE_SPRITES := #partial [Tile_Type]Tile_Sprite {
+TILE_SPRITES :=  [Tile_Type]Tile_Sprite {
     .None={},
-    .Unused={},
+    .Slow_Zone={
+    	rect=Rect{12*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+    },
+    .Unused={
+    	rect=Rect{11*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+    },
     .Dot={
-        rect=Rect{8*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        rect=Rect{9*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
     },
     .Pellet={
-        rect=Rect{9*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        rect=Rect{10*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
     },
     .Wall_Left={
         rect=Rect{0*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
@@ -225,6 +250,22 @@ TILE_SPRITES := #partial [Tile_Type]Tile_Sprite {
     .Double_Wall_Sharp_Top_Right={
         rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={false, true},
+    },
+    .Double_Inner_Wall_Top_Left={
+    	rect=Rect{8*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+     	flip={true, true},
+    },
+    .Double_Inner_Wall_Top_Right={
+    	rect=Rect{8*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+     	flip={false, true},
+    },
+    .Double_Inner_Wall_Bottom_Left={
+    	rect=Rect{8*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+     	flip={true, false},
+    },
+    .Double_Inner_Wall_Bottom_Right={
+    	rect=Rect{8*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+     	flip={false, false},
     },
     .Ghost_Pass={
         rect=Rect{3*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},

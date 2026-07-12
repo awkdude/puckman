@@ -161,7 +161,7 @@ blit_indexed :: proc(
     for y := dstb.min.y; y < dstb.max.y; y += 1 {
         sx := src_start_x
         for x := dstb.min.x; x < dstb.max.x; x += 1 {
-            color_idx := src_ptr[cast(int)sx]
+            color_idx := src_ptr[cast(int)sx] % len(palette^)
             if color_idx != 0 {
                 (cast([^]ColorU32)dst_ptr)[x] = palette[color_idx]
             }
