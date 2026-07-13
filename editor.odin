@@ -18,6 +18,9 @@ Tile_Edit :: struct {
 	old, current: Tile_Type,
 }
 
+MAZE_LOWER_BOUND :: 3*COLS
+MAZE_UPPER_BOUND :: ((ROWS-2)*COLS)-1
+
 editor_init :: proc() {
 
 }
@@ -26,6 +29,11 @@ update_editor :: proc() {
 	if .Left in game.input_state.mouse_buttons {
 		place_tile()
 	}
+	bottom_margin_y := (ROWS-2)*CELL_SIZE
+	rg_fill_rect(
+		Rect{0, bottom_margin_y, INTERN_FRAMEBUFFER_DIMS.x, PLAYER_SIZE},
+		color_grey_4b
+	)
 	tile_sprite := TILE_SPRITES[cast(Tile_Type)game.editor.selected_tile]
 	rg_texture(game.tile_spritesheet)
 	rg_blit(get_position_from_grid_coord({7, ROWS-2}), tile_sprite.rect, tile_sprite.flip, PLAYER_DIMS)
@@ -38,6 +46,7 @@ update_editor :: proc() {
 @(private="file")
 place_tile :: proc() {
 	tile_placement_tile_index := get_tile_index_from_tile_coord(game.editor.tile_placement_grid_coord)
+	if tile_placement_tile_index < MAZE_LOWER_BOUND || tile_placement_tile_index > MAZE_UPPER_BOUND do return
 	old_tile := game.tile_map[tile_placement_tile_index]
 	game.tile_map[tile_placement_tile_index] = cast(Tile_Type)game.editor.selected_tile
 	if game.editor.selected_tile != old_tile {

@@ -6,7 +6,7 @@ Debug_Mode :: enum {
 	Editor,
 }
 
-CHAR_TILE_MAP := "0123456789abcdefghijklmnopqrstuvwxyz"
+CHAR_TILE_MAP := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 // TODO: Maybe rename this Wall_Tile_Type
 Tile_Type :: enum u8 {
@@ -21,6 +21,10 @@ Tile_Type :: enum u8 {
     Wall_Top_Right,
     Wall_Bottom_Left,
     Wall_Bottom_Right,
+    Inner_Wall_Top_Left,
+    Inner_Wall_Top_Right,
+    Inner_Wall_Bottom_Left,
+    Inner_Wall_Bottom_Right,
     Double_Wall_Top,
     Double_Wall_Bottom,
     Double_Wall_Left,
@@ -203,6 +207,21 @@ TILE_SPRITES :=  [Tile_Type]Tile_Sprite {
     },
     .Wall_Top_Right={
         rect=Rect{2*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        flip={false, true},
+    },
+    .Inner_Wall_Bottom_Right={
+        rect=Rect{13*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+    },
+    .Inner_Wall_Bottom_Left={
+        rect=Rect{13*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        flip={true, false},
+    },
+    .Inner_Wall_Top_Left={
+        rect=Rect{13*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        flip={true, true},
+    },
+    .Inner_Wall_Top_Right={
+        rect=Rect{13*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
         flip={false, true},
     },
     .Double_Wall_Bottom={

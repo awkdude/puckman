@@ -9,58 +9,62 @@
 # Wall_Top_Right: 8
 # Wall_Bottom_Left: 9
 # Wall_Bottom_Right: a
-# Double_Wall_Top: b
-# Double_Wall_Bottom: c
-# Double_Wall_Left: d
-# Double_Wall_Right: e
-# Double_Wall_Sharp_Top_Left: f
-# Double_Wall_Sharp_Top_Right: g
-# Double_Wall_Sharp_Bottom_Left: h
-# Double_Wall_Sharp_Bottom_Right: i
-# Double_Wall_Top_Left: j
-# Double_Wall_Top_Right: k
-# Double_Wall_Bottom_Left: l
-# Double_Wall_Bottom_Right: m
-# Double_Inner_Wall_Top_Left: n
-# Double_Inner_Wall_Top_Right: o
-# Double_Inner_Wall_Bottom_Left: p
-# Double_Inner_Wall_Bottom_Right: q
-# Ghost_Pass: r
-# Slow_Zone: s
-# Unused: t
+# Inner_Wall_Top_Left: b
+# Inner_Wall_Top_Right: c
+# Inner_Wall_Bottom_Left: d
+# Inner_Wall_Bottom_Right: e
+# Double_Wall_Top: f
+# Double_Wall_Bottom: g
+# Double_Wall_Left: h
+# Double_Wall_Right: i
+# Double_Wall_Sharp_Top_Left: j
+# Double_Wall_Sharp_Top_Right: k
+# Double_Wall_Sharp_Bottom_Left: l
+# Double_Wall_Sharp_Bottom_Right: m
+# Double_Wall_Top_Left: n
+# Double_Wall_Top_Right: o
+# Double_Wall_Bottom_Left: p
+# Double_Wall_Bottom_Right: q
+# Double_Inner_Wall_Top_Left: r
+# Double_Inner_Wall_Top_Right: s
+# Double_Inner_Wall_Bottom_Left: t
+# Double_Inner_Wall_Bottom_Right: u
+# Ghost_Pass: v
+# Slow_Zone: w
+# Unused: x
 0000000000000000000000000000
 0000000000000000000000000000
 0000000000000000000000000000
-jbbbbbbbbbbbbbbbbbbbbbbbbbbk
-d11111111111133100000000000e
-d17558175558033100000000000e
-bb3004130004033100000000000e
-d1966a19666a000000000000000e
-d11b11100000000000000000000e
-d17558000000000000000000000e
-d1l66a100000000000000000000e
-d11111100000000000000000000e
-lcccco1000000000000000nccccm
-00000d1000000000000001e00000
-00000d1000fccrbcbgb0b1eb0b00
-bbbbbq1b00ebb0000d0001e0000b
-ssssss100bb000000d0001pbbbbb
-ccccco1bb0e000000d00010sssss
-00000d1b40hbbbbbbi0001nccccc
-00000d1b40000000000001000000
-00000d19a0000000000001000000
-jbbbbq1000000000000000000000
-d111111111111000000000000000
-d1755817bbb81000000000000000
-d1958419bbba1000000000000000
-d211441111111000000000000000
-9681441780000000000000000000
-7ba19a1440000000000000000000
-d111111440000000000000000000
-d175665a96680000000000000000
-d1966666666a0000000000000000
-d111111111111111111111111110
-lccccccccccccccccccccccccccm
-0000000000000000000000000000
+nffffffffffffffffffffffffffo
+h11111111111143111111111111i
+h17558175558143175558175581i
+h23004130004143130004130042i
+h1966a19666a1de19666a1966a1i
+h11111111111111111111111111i
+h1b66c1bc1b666666c1bc1b66c1i
+h1d55e1431d558755e1431d55e1i
+h11111143111143111143111111i
+pggggs14966c0430b66a31rggggq
+00000h14755e0de0d55831i00000
+00000h1430000000000431i00000
+00000h1430jggvvggk0431i00000
+fffffu1de0i000000h0de1tfffff
+0000001000i000000h0001000000
+gggggs1bc0i000000h0bc1rggggg
+00000h1430lffffffm0431i00000
+00000h1430000000000431i00000
+00000h1430b666666c0431i00000
+nffffu1de0d558755e0de1tffffo
+h11111111111143111111111111i
+h1b66c1b666c1431b666c1b66c1i
+h1d5831d555e1de1d555e1475e1i
+h21143111111111111111143112i
+p6c1431bc1b666666c1bc1431b6q
+75e1de1431d558755e1431de1d58
+h11111143111143111143111111i
+h1b6666a966c1431b66a96666c1i
+h1d55555555e1de1d55555555e1i
+h11111111111111111111111111i
+pggggggggggggggggggggggggggq
 0000000000000000000000000000
 0000000000000000000000000000
