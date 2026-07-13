@@ -26,6 +26,7 @@ color_white_4b :: Color4b {0xff, 0xff, 0xff, 0xff}
 color_black_4b :: Color4b {0x00, 0x00, 0x00, 0xff}
 color_purple_4b :: Color4b {0xb0, 0x00, 0xff, 0xff}
 color_brown_4b :: Color4b{0x8f, 0x51, 0x29, 0xff}
+color_tortilla_4b :: Color4b{0x99, 0x79, 0x50, 0xff}
 
 PLATFORM_BACKEND :: #config(BACKEND, "native")
 
@@ -93,6 +94,7 @@ Engine_Context :: struct {
     ghosts: [Ghost_Type]Ghost_Actor,
     render_group: Render_Group,
     last_frame_tick: time.Tick,
+    sim_ticks, frame_counter: int,
     lag: time.Duration,
     rects_collide: bool,
     anim, ghost_anim: Sprite_Animator,
@@ -291,8 +293,7 @@ update_world :: proc() {
 }
 
 eng_update_render :: proc(update_info: Engine_Update) -> bool {
-	// DELETE:
-	pacman_ptr = game.player_spritesheet.pixels
+	game.frame_counter += 1
     if game == nil {
         return true
     }
@@ -320,6 +321,7 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
 			game.lag = SIM_UPDATE_INTERVAL
 	    }
         update_world()
+        game.sim_ticks += 1
         game.lag -= SIM_UPDATE_INTERVAL
     }
     set_direction_from_input()

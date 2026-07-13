@@ -79,7 +79,7 @@ update_editor :: proc() {
 			rg_fill_rect(Rect{p.x, p.y, PLAYER_SIZE, PLAYER_SIZE}, color_green_4b)
 		case .Slow_Zone:
 			p := get_position_from_grid_coord({7, ROWS-2})
-			rg_fill_rect(Rect{p.x, p.y, PLAYER_SIZE, PLAYER_SIZE}, color_red_4b)
+			rg_fill_rect(Rect{p.x, p.y, PLAYER_SIZE, PLAYER_SIZE}, color_tortilla_4b)
 		}
 		draw_text("MARKER: ", get_position_from_tile_index(COLS*(ROWS-1)))
 		rg_fill_rect(Rect{pos.x, pos.y, CELL_SIZE, CELL_SIZE}, color_brown_4b)
@@ -102,10 +102,12 @@ update_editor :: proc() {
 			case .Ghost_Decision:
 				color = color_green_4b
 			case .Slow_Zone:
-				color = color_brown_4b
+				color = color_tortilla_4b
 			}
-			tile_pos := get_position_from_tile_index(i)
-			rg_fill_rect(Rect{tile_pos.x, tile_pos.y, CELL_SIZE, CELL_SIZE}, color)
+			if util.blink_state(game.frame_counter, 60) == 0 {
+				tile_pos := get_position_from_tile_index(i)
+				rg_fill_rect(Rect{tile_pos.x, tile_pos.y, CELL_SIZE, CELL_SIZE}, color)
+			}
 		}
 	}
 }
@@ -219,10 +221,7 @@ load_tile_map :: proc() {
         	data_i += 1
      	}
     }
-    log.debug(data_i)
-    log.debug(len(level_data))
-    for ; data_i < len(level_data); data_i += 1 {
-        if tile_i >= num_tiles do break
+    for ; tile_i < num_tiles; data_i += 1 {
         if level_data[data_i] == '\n' || level_data[data_i] == '\r' do continue
         index := strings.index_rune(CHAR_TILE_MAP, cast(rune)level_data[data_i])
         log.assertf(index != -1 && index < len(Tile_Type), "Unknown tile char: %c", level_data[data_i])
@@ -230,8 +229,16 @@ load_tile_map :: proc() {
         game.tile_map[tile_i] = tile
         tile_i += 1
     }
-    assert(cast(i32)tile_i == ROWS*COLS)
-    log.debug(tile_i)
+    data_i += 1
+    tile_i = 0
+    for ; tile_i < num_tiles; data_i += 1 {
+        if level_data[data_i] == '\n' || level_data[data_i] == '\r' do continue
+        index := strings.index_rune(CHAR_MARKER_MAP, cast(rune)level_data[data_i])
+        log.assertf(index != -1 && index < len(Marker_Tile_Type), "Unknown tile char: %c", level_data[data_i])
+        marker_tile := cast(Marker_Tile_Type)index
+        game.marker_map[tile_i] = marker_tile
+        tile_i += 1
+    }
 }
 
 save_tile_map :: proc() {
@@ -241,7 +248,7 @@ save_tile_map :: proc() {
 	sb, sb_err := strings.builder_make(context.temp_allocator)
 	assert(sb_err == nil)
 
-	// Write comment section
+	// Write legend comment section
 	for tile_type, i in Tile_Type {
 		fmt.sbprintfln(&sb, "# %v: %c", tile_type, CHAR_TILE_MAP[i])
 	}
@@ -255,5 +262,14 @@ save_tile_map :: proc() {
 			strings.write_rune(&sb, '\n')
 		}
 	}
+	strings.write_string(&sb, "\n")
+	// Write marker tile data into maze.txt
+	for marker, i in game.marker_map {
+		strings.write_rune(&sb, cast(rune)CHAR_MARKER_MAP[cast(int)marker])
+		if cast(i32)i % COLS == COLS-1 {
+			strings.write_rune(&sb, '\n')
+		}
+	}
+
 	os.write(file, transmute([]u8)strings.to_string(sb))
 }

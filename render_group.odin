@@ -22,9 +22,6 @@ white_texture_data := []ColorU32 {
 	0xffffffff,
 }
 
-real_framebuffer_ptr: rawptr
-pacman_ptr: rawptr
-
 // Queue of rendering commands
 Render_Group :: struct {
     // buffer: [1024*1024]u8,
@@ -202,9 +199,6 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
         	assert(cmd.palette != {})
        		rg.palette[cmd.palette.idx] = util.pack_color(cmd.palette.color, target_pixmap.format)
         case .Blit:
-        	if rg.texture.pixels == pacman_ptr {
-         		// intrinsics.debug_trap()
-	        }
 	        if rg.texture.format.bytes_per_pixel == 4 {
 				blit(
 	                target_pixmap,

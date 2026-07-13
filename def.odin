@@ -7,7 +7,7 @@ Debug_Mode :: enum {
 }
 
 CHAR_TILE_MAP := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-CHAR_MARKER_MAP := "!@#$%^&*()"
+CHAR_MARKER_MAP := ".!@#$%^&*()"
 
 // TODO: Maybe rename this Wall_Tile_Type
 Tile_Type :: enum u8 {
@@ -43,7 +43,6 @@ Tile_Type :: enum u8 {
     Double_Inner_Wall_Bottom_Left,
     Double_Inner_Wall_Bottom_Right,
     Ghost_Pass,
-    Slow_Zone, // TODO: remove this
     Unused,
 }
 
@@ -102,7 +101,6 @@ PASSABLE_TILES :: bit_set[Tile_Type] {
 	.Pellet,
 	.None,
 	.Unused,
-	.Slow_Zone,
 }
 
 GHOST_PASSABLE_TILES :: bit_set[Tile_Type] {
@@ -169,9 +167,6 @@ GHOST_SPRITES := [Direction][2]Tile_Sprite {
 
 TILE_SPRITES :=  [Tile_Type]Tile_Sprite {
     .None={},
-    .Slow_Zone={
-    	rect=Rect{12*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
-    },
     .Unused={
     	rect=Rect{11*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
     },
