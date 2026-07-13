@@ -7,6 +7,7 @@ Debug_Mode :: enum {
 }
 
 CHAR_TILE_MAP := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+CHAR_MARKER_MAP := "!@#$%^&*()"
 
 // TODO: Maybe rename this Wall_Tile_Type
 Tile_Type :: enum u8 {
