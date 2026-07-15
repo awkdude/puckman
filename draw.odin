@@ -2,6 +2,7 @@ package main
 
 import "odinlib:util"
 import "core:mem"
+import "core:math"
 import "core:slice"
 import "core:math/linalg"
 import "core:log"
@@ -155,7 +156,7 @@ blit_indexed :: proc(
     sy: f32 = cast(f32)srcb.max.y - 1 if flip.y else cast(f32)srcb.min.y
 
     dst_ptr := mem.ptr_offset(cast([^]u8)dst_pixmap.pixels, dstb.min.y * dst_pixmap.pitch)
-    src_ptr := mem.ptr_offset(cast([^]u8)src_pixmap.pixels, srcb.min.y * src_pixmap.pitch)
+    src_ptr := mem.ptr_offset(cast([^]u8)src_pixmap.pixels, cast(i32)sy * src_pixmap.pitch)
     src_start_x := cast(f32)srcb.max.x - 1 if flip.x else cast(f32)srcb.min.x
 
     for y := dstb.min.y; y < dstb.max.y; y += 1 {
@@ -168,8 +169,13 @@ blit_indexed :: proc(
             sx += src_inc_x
         }
         sy += src_inc_y
+        // if sy < 0 {
+        // 	sy = 0
+        // }
+        sy := math.clamp(sy, cast(f32)srcb.min.y, cast(f32)srcb.max.y - 1)
+        // log.assertf(cast(i32)sy >= srcb.min.y && cast(i32)sy <= srcb.max.y, "%v not in [%v, %v]", sy, srcb.min.y, srcb.max.y)
         dst_ptr = mem.ptr_offset(dst_ptr, dst_pixmap.pitch)
-        src_ptr = mem.ptr_offset(cast([^]u8)src_pixmap.pixels, (uintptr)(cast(i32)sy * src_pixmap.pitch))
+        src_ptr = mem.ptr_offset(cast([^]u8)src_pixmap.pixels, (uintptr)(cast(i32)math.trunc(sy) * src_pixmap.pitch))
     }
 }
 

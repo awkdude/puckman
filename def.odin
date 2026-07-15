@@ -2,6 +2,7 @@ package main
 
 Debug_Mode :: enum {
 	None,
+	Ghost_Target,
 	Grid,
 	Editor,
 }
@@ -95,6 +96,12 @@ Ghost_Actor :: struct {
 	target_tile_index: i32,
 }
 
+GHOST_SCATTER_TARGET_TILE_INDEX := [Ghost_Type]i32 {
+	.Blinky = COLS-3,
+	.Pinky = 2,
+	.Inky = COLS*ROWS-1,
+	.Clyde = COLS*(ROWS-1),
+}
 
 PASSABLE_TILES :: bit_set[Tile_Type] {
 	.Dot,

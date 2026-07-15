@@ -6,6 +6,7 @@ import "core:math/rand"
 import "core:thread"
 import "core:time"
 import "core:fmt"
+import "core:slice"
 import "core:math"
 import "core:os"
 import "core:dynlib"
@@ -103,6 +104,7 @@ Engine_Context :: struct {
     palette: Palette,
     frightened_sim_tick: int,
     paused: bool,
+    eat_count: i32,
 
     module: struct {
         dynlib_ptr: dynlib.Library,
@@ -175,6 +177,7 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     assert(load_ok)
 
     load_tile_map()
+    reset_level()
 
     game.ghosts[.Blinky].direction = .Left
     game.ghosts[.Pinky].direction = .Right
@@ -273,17 +276,23 @@ update_world :: proc() {
     // Eat dot
     if game.tile_map[player_tile_index] == .Dot {
         game.tile_map[player_tile_index] = .None
+        game.player_score += 10
     } else if game.tile_map[player_tile_index] == .Pellet {
         broadcast_ghost_state(.Frightened)
         game.tile_map[player_tile_index] = .None
+        game.player_score += 50
     }
     anim_update(&game.ghost_anim, game.last_frame_tick)
     for ghost_index in Ghost_Type {
     	ghost_actor := &game.ghosts[ghost_index]
         ghost_tile_index := get_tile_index_from_position(cast(vec2)ghost_actor.position)
+        // Check player collision with ghosts
         if ghost_tile_index == player_tile_index {
             if ghost_actor.state == .Frightened {
                 ghost_actor.state = .Eaten
+                game.eat_count += 1
+                game.player_score += (i32)(1 << cast(u32)game.eat_count) * 100
+                // TODO: set hesitate time
             } else {
                 // TODO: kill pacman
             }
@@ -346,13 +355,17 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
     }
     player_tile_index := get_tile_index_from_position(cast(vec2)game.player_position)
     tile_pos := get_tile_coord_from_tile_index(player_tile_index)
-    switch game.debug_mode {
+    #partial switch game.debug_mode {
    	case .None:
 	    draw_text("HIGH SCORE", get_position_from_grid_coord({11, 0}))
-	    score_text := fmt.tprintf("%v", game.player_score)
+	    score_text := fmt.tprintf("%02d", game.player_score)
 	    draw_text(score_text, get_position_from_grid_coord({5, 1}))
+    case .Ghost_Target:
+    	 draw_text("TARGET", {0, 0})
 	case .Editor:
 		draw_text("EDITOR", {0, 0})
+		src_xoffset: i32 = 52 if game.editor.unlocked else 51
+		blit_sprite(.Small, {6*CELL_SIZE, 0}, vec2{src_xoffset * CELL_SIZE, 0})
 	case .Grid:
 		draw_text("GRID", {0, 0})
 	}
@@ -405,6 +418,8 @@ eng_handle_event :: proc(window_event: util.Window_Event) {
                 game.running = false
             case util.KEY_P:
            		broadcast_ghost_state(.Frightened)
+            case util.KEY_R:
+	           	reset_level()
             case util.KEY_F1:
             	mode_int := cast(int)game.debug_mode
             	mode_int = util.wrap(mode_int + 1, len(Debug_Mode))
@@ -481,11 +496,14 @@ set_direction_from_input :: proc "contextless" () {
 // Set state for all ghosts
 broadcast_ghost_state :: proc(state: Ghost_State) {
 	for &ghost in game.ghosts {
-		ghost.state = state
+		if ghost.state == .Scatter || ghost.state == .Chase {
+			ghost.state = state
+		}
 	}
 	// TODO: change this code and apply for more states
 	if state == .Frightened {
 		game.frightened_sim_tick = 30*6
+		game.eat_count = 0
 	}
 }
 
@@ -501,7 +519,7 @@ get_adjacent_tile_type :: proc "contextless" (#any_int tile_idx: i32, direction:
         ok = adj_idx > 0
     case .Right:
         adj_idx = tile_idx+1
-        ok = (adj_idx % COLS) < COLS-1
+        ok = (adj_idx % COLS) < COLS
     case .Up:
         adj_idx = tile_idx-COLS
         ok = adj_idx >= COLS
@@ -699,13 +717,54 @@ draw_ghosts :: proc() {
             }, inv_color(ghost_color))
         }
     }
+    // Draw ghost's targets
+    if game.debug_mode == .Ghost_Target {
+	    rg_texture(game.tile_spritesheet)
+	    for ghost_index in Ghost_Type {
+		   	rg_palette(1, GHOST_COLORS[ghost_index])
+		    scatter_target_pos := get_position_from_tile_index(game.ghosts[ghost_index].target_tile_index)
+		    rg_blit(scatter_target_pos, Rect{14*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE})
+			ghost_tile_index := get_tile_index_from_position(cast(vec2)game.ghosts[ghost_index].position)
+			ghost_grid_coord := get_tile_coord_from_tile_index(ghost_tile_index)
+			target_tile_grid_coord := get_tile_coord_from_tile_index(game.ghosts[ghost_index].target_tile_index)
+			current_grid_coord := ghost_grid_coord
+			current_direction := game.ghosts[ghost_index].direction
+			past_grid_coords: [dynamic; 128]vec2
+			for current_grid_coord != target_tile_grid_coord {
+				if slice.contains(past_grid_coords[:], current_grid_coord) do break
+				next_coord := current_grid_coord
+				min_dist_sq: i32
+				next_dir_coord: [Direction]vec2
+				next_dir_coord[.Up] = next_coord + {0, -1}
+				next_dir_coord[.Down] = next_coord + {0, 1}
+				next_dir_coord[.Left] = next_coord + {-1, 0}
+				next_dir_coord[.Right] = next_coord + {1, 0}
+				for coord, i in slice.enumerated_array(&next_dir_coord) {
+					if coord == {} do continue
+					if coord.x < 0 do continue
+					if coord.x > COLS-1 do continue
+					if coord.y < 0 do continue
+					if coord.y > ROWS-1 do continue
+					tile_index := get_tile_index_from_tile_coord(coord)
+					if game.tile_map[tile_index] not_in PASSABLE_TILES do continue
+					dx := (current_grid_coord.x - target_tile_grid_coord.x)
+					dy := (current_grid_coord.y - target_tile_grid_coord.y)
+					dist_sq := dx * dx + dy * dy
+					if min_dist_sq == {} || dist_sq < min_dist_sq {
+						min_dist_sq = dist_sq
+					}
+				}
+
+			}
+	    }
+    }
 }
 
-draw_path :: proc(origin_tile_index: vec2, path: []Direction) {
-	for i in 0..<len(path)-1 {
-		// TODO:
-	}
-}
+// draw_path :: proc(origin_tile_index: vec2, path: []Direction) {
+// 	for i in 0..<len(path)-1 {
+// 		// TODO:
+// 	}
+// }
 
 draw_text :: proc(text: string, offset: vec2, scale: f32 = 1.0, loc := #caller_location) {
 	rg_texture(game.text_spritesheet)

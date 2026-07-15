@@ -13,6 +13,8 @@ Editor_State :: struct {
 	edit_ring_buffer: [1024]Tile_Edit,
 	edit_head, edit_tail: int,
 	mode: enum {Tile, Marker,},
+	// Prevents me from accidentally editing map
+	unlocked: bool,
 }
 
 Tile_Edit :: struct {
@@ -114,6 +116,7 @@ update_editor :: proc() {
 
 @(private="file")
 place_marker_tile :: proc() {
+	if !game.editor.unlocked do return
 	DUPABLE_MARKERS := bit_set[Marker_Tile_Type]{.None, .Ghost_Decision, .Slow_Zone}
 	tile_placement_tile_index := get_tile_index_from_tile_coord(game.editor.tile_placement_grid_coord)
 	if tile_placement_tile_index < MAZE_LOWER_BOUND || tile_placement_tile_index > MAZE_UPPER_BOUND do return
@@ -130,6 +133,7 @@ place_marker_tile :: proc() {
 
 @(private="file")
 place_tile :: proc() {
+	if !game.editor.unlocked do return
 	tile_placement_tile_index := get_tile_index_from_tile_coord(game.editor.tile_placement_grid_coord)
 	if tile_placement_tile_index < MAZE_LOWER_BOUND || tile_placement_tile_index > MAZE_UPPER_BOUND do return
 	old_tile := game.tile_map[tile_placement_tile_index]
@@ -150,6 +154,7 @@ place_tile :: proc() {
 
 @(private="file")
 undo_tile_edit :: proc() {
+	if !game.editor.unlocked do return
 	if game.editor.edit_head == game.editor.edit_tail do return
 	game.editor.edit_tail = util.wrap(game.editor.edit_tail - 1, len(game.editor.edit_ring_buffer))
 	tile_edit := game.editor.edit_ring_buffer[game.editor.edit_tail]
@@ -175,6 +180,8 @@ editor_handle_event :: proc(window_event: util.Window_Event) {
 			undo_tile_edit()
 		case util.KEY_RETURN:
 			place_tile()
+		case util.KEY_0:
+			game.editor.unlocked = !game.editor.unlocked
 		case util.KEY_INSERT:
 			if game.editor.mode == .Tile {
 				select_int := cast(int)game.editor.selected_tile

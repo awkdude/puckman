@@ -152,7 +152,7 @@ when PLATFORM_BACKEND == "sdl" {
                 format=pixel_format,
 	        }
 	        U := Engine_Update{
-	            window_size={w, h},
+	            window_dims={w, h},
 	            gamepad_state=gamepad_state,
 	            is_gamepad_connected=gamepad_ok,
 	            framebuffer=framebuffer,

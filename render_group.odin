@@ -27,8 +27,9 @@ Render_Group :: struct {
     // buffer: [1024*1024]u8,
     // len: int,
     texture: Pixmap,
-    buffer: [dynamic; 2048]RG_Entry,
     palette: Palette,
+    global_offset: vec2,
+    buffer: [dynamic; 2048]RG_Entry,
 }
 
 RG_Clear :: struct #align(4) {
@@ -143,6 +144,11 @@ rg_texture :: proc(texture: Pixmap, loc := #caller_location) {
 	rg_push(entry, loc)
 }
 
+rg_translate :: proc(offset: vec2, loc := #caller_location) {
+	entry := RG_Entry{ type=.Translate, offset=offset}
+	rg_push(entry, loc)
+}
+
 RG_Grid :: struct {
 	rect: Rect,
 	cell_size: vec2f,
@@ -162,6 +168,7 @@ RG_Entry_Type :: enum i32 {
     Texture,
     Blit,
     Grid,
+    Translate,
 }
 
 RG_Entry :: struct {
@@ -173,6 +180,7 @@ RG_Entry :: struct {
 		blit: RG_Blit,
 		texture: RG_Texture,
         grid: RG_Grid,
+        offset: vec2,
 	},
 	loc: runtime.Source_Code_Location,
 }
@@ -198,12 +206,14 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
         case .Palette:
         	assert(cmd.palette != {})
        		rg.palette[cmd.palette.idx] = util.pack_color(cmd.palette.color, target_pixmap.format)
+        case .Translate:
+        	rg.global_offset = cmd.offset
         case .Blit:
 	        if rg.texture.format.bytes_per_pixel == 4 {
 				blit(
 	                target_pixmap,
 	                rg.texture,
-	                cmd.blit.offset,
+	                rg.global_offset + cmd.blit.offset,
 	                cmd.blit.src_rect,
                     cmd.blit.dst_dims,
                     cmd.blit.clip_rect,
@@ -214,7 +224,7 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
 					&rg.palette,
 	                target_pixmap,
 	                rg.texture,
-	                cmd.blit.offset,
+	                rg.global_offset + cmd.blit.offset,
 	                cmd.blit.src_rect,
                     cmd.blit.dst_dims,
                     cmd.blit.clip_rect,
@@ -222,12 +232,21 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
             	)
 			}
         case .Fill_Rect:
+        	cmd := cmd
+        	cmd.rect.rect.x += rg.global_offset.x
+        	cmd.rect.rect.y += rg.global_offset.y
             fill_rect_f(target_pixmap, cmd.rect.rect, util.color4b_to_4f(cmd.rect.color))
         case .Stroke_Rect:
+	       	cmd := cmd
+	       	cmd.rect.rect.x += rg.global_offset.x
+	       	cmd.rect.rect.y += rg.global_offset.y
             stroke_rect_f(target_pixmap, cmd.rect.rect, util.color4b_to_4f(cmd.rect.color))
         case .Texture:
         	rg.texture = cmd.texture.texture
         case .Grid:
+	        cmd := cmd
+	       	cmd.rect.rect.x += rg.global_offset.x
+	       	cmd.rect.rect.y += rg.global_offset.y
             pixels := cast([^]ColorU32)target_pixmap.pixels
             line_color := util.pack_color_4f(cmd.grid.color, target_pixmap.format)
             x := cast(f32)cmd.grid.rect.x
@@ -249,5 +268,6 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
         }
     }
     rg.texture = {}
+    rg.global_offset = {}
     clear(&rg.buffer)
 }
