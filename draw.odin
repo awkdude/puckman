@@ -3,6 +3,7 @@ package main
 import "odinlib:util"
 import "core:mem"
 import "core:math"
+import fp "core:math/fixed"
 import "core:slice"
 import "core:math/linalg"
 import "core:log"
@@ -92,8 +93,179 @@ stroke_rect_f :: proc(pixmap: Pixmap, r: Rect, color: Color4f) {
     }
 }
 
-// FIXME: off by 1 error when flip y
-// TODO: dup to blit when fixed
+blit_fp :: proc(
+    dst_pixmap, src_pixmap: Pixmap,
+    offset: vec2,
+    src_rect: Maybe(Rect) = nil,
+    dst_dims: Maybe(vec2) = nil,
+    clip_rect: Maybe(Rect) = nil,
+    flip: [2]bool = {false, false})
+{
+	Fixed :: fp.Fixed(i32, 18)
+	assert(dst_pixmap.pitch != 0)
+    assert(src_pixmap.pitch != 0)
+    assert(dst_pixmap.format == src_pixmap.format)
+    dstb, srcb: util.BBox
+    src_rect, src_rect_ok := src_rect.?
+    if src_rect_ok {
+        srcb = util.rect_to_bbox(src_rect)
+        srcb.min.x = max(0, src_rect.x)
+        srcb.max.x = min(srcb.max.x, src_pixmap.w)
+        srcb.min.y = max(0, src_rect.y)
+        srcb.max.y = min(srcb.max.y, src_pixmap.h)
+    } else {
+        srcb = util.rect_to_bbox(Rect{0, 0, src_pixmap.w, src_pixmap.h})
+    }
+    if dst_dims, ok := dst_dims.?; ok {
+        dstb = util.rect_to_bbox(Rect{offset.x, offset.y, dst_dims.x, dst_dims.y})
+    } else {
+        dstb = util.rect_to_bbox(Rect{offset.x, offset.y, srcb.max.x - srcb.min.x, srcb.max.y - srcb.min.y})
+    }
+    // get src inc before clamping dst bbox
+    src_inc_x, src_inc_y: Fixed
+    fp.init_from_f64(&src_inc_x, (f64)(srcb.max.x - srcb.min.x) / (f64)(dstb.max.x - dstb.min.x))
+    if flip.x {
+        src_inc_x.i = -src_inc_x.i
+    }
+    fp.init_from_f64(&src_inc_y, (f64)(srcb.max.y - srcb.min.y) / (f64)(dstb.max.y - dstb.min.y))
+    if flip.y {
+        src_inc_y.i = -src_inc_y.i
+    }
+    clip_rect := clip_rect.? or_else Rect{0, 0, dst_pixmap.w, dst_pixmap.h}
+    clip_box := util.rect_to_bbox(clip_rect)
+    if dstb.min.x < clip_box.min.x {
+        if flip.x {
+            srcb.max.x -= (clip_box.min.x - dstb.min.x)
+        } else {
+            srcb.min.x += (clip_box.min.x - dstb.min.x)
+        }
+    }
+    if dstb.min.y < clip_box.min.y {
+        if flip.y {
+            srcb.max.y -= (clip_box.min.y - dstb.min.y)
+        } else {
+            srcb.min.y += (clip_box.min.y - dstb.min.y)
+        }
+    }
+    dstb = util.intersection_bbox(dstb, clip_box)
+    // Return if clip rect and dst rect don't intersect
+    if dstb.max.x < dstb.min.x || dstb.max.y < dstb.min.y {
+        return
+    }
+    sy: Fixed
+    fp.init_from_parts(&sy, srcb.max.y - 1 if flip.y else srcb.min.y, 0)
+
+    dst_ptr := mem.ptr_offset(cast([^]u8)dst_pixmap.pixels, dstb.min.y * dst_pixmap.pitch)
+    src_ptr := mem.ptr_offset(cast([^]u8)src_pixmap.pixels, cast(i32)(sy.i >>  Fixed.Fraction_Width) * src_pixmap.pitch)
+    src_start_x: Fixed
+    fp.init_from_parts(&src_start_x, srcb.max.x - 1 if flip.x else srcb.min.x, 0)
+
+    for y := dstb.min.y; y < dstb.max.y; y += 1 {
+        sx := src_start_x
+        for x := dstb.min.x; x < dstb.max.x; x += 1 {
+	        (cast([^]ColorU32)dst_ptr)[x] = (cast([^]ColorU32)src_ptr)[cast(int)(sx.i >> Fixed.Fraction_Width)]
+            sx = fp.add(sx, src_inc_x)
+        }
+        sy = fp.add(sy, src_inc_y)
+        // if sy < 0 {
+        // 	sy = 0
+        // }
+        // sy := math.clamp(sy, cast(f32)srcb.min.y, cast(f32)srcb.max.y - 1)
+        // log.assertf(cast(i32)sy >= srcb.min.y && cast(i32)sy <= srcb.max.y, "%v not in [%v, %v]", sy, srcb.min.y, srcb.max.y)
+        dst_ptr = mem.ptr_offset(dst_ptr, dst_pixmap.pitch)
+        src_ptr = mem.ptr_offset(cast([^]u8)src_pixmap.pixels, (uintptr)(cast(i32)(sy.i >> 18) * src_pixmap.pitch))
+    }
+}
+
+blit_indexed_fp :: proc(
+    palette: ^Palette,
+    dst_pixmap, src_pixmap: Pixmap,
+    offset: vec2,
+    src_rect: Maybe(Rect) = nil,
+    dst_dims: Maybe(vec2) = nil,
+    clip_rect: Maybe(Rect) = nil,
+    flip: [2]bool = {false, false})
+{
+	Fixed :: fp.Fixed(i32, 18)
+    assert(dst_pixmap.pitch != 0)
+    assert(src_pixmap.pitch != 0)
+    assert(dst_pixmap.format.bytes_per_pixel == 4)
+    assert(src_pixmap.format.bytes_per_pixel == 1)
+    dstb, srcb: util.BBox
+    src_rect, src_rect_ok := src_rect.?
+    if src_rect_ok {
+        srcb = util.rect_to_bbox(src_rect)
+        srcb.min.x = max(0, src_rect.x)
+        srcb.max.x = min(srcb.max.x, src_pixmap.w)
+        srcb.min.y = max(0, src_rect.y)
+        srcb.max.y = min(srcb.max.y, src_pixmap.h)
+    } else {
+        srcb = util.rect_to_bbox(Rect{0, 0, src_pixmap.w, src_pixmap.h})
+    }
+    if dst_dims, ok := dst_dims.?; ok {
+        dstb = util.rect_to_bbox(Rect{offset.x, offset.y, dst_dims.x, dst_dims.y})
+    } else {
+        dstb = util.rect_to_bbox(Rect{offset.x, offset.y, srcb.max.x - srcb.min.x, srcb.max.y - srcb.min.y})
+    }
+    // get src inc before clamping dst bbox
+    src_inc_x, src_inc_y: Fixed
+    fp.init_from_f64(&src_inc_x, (f64)(srcb.max.x - srcb.min.x) / (f64)(dstb.max.x - dstb.min.x))
+    if flip.x {
+        src_inc_x.i = -src_inc_x.i
+    }
+    fp.init_from_f64(&src_inc_y, (f64)(srcb.max.y - srcb.min.y) / (f64)(dstb.max.y - dstb.min.y))
+    if flip.y {
+        src_inc_y.i = -src_inc_y.i
+    }
+    clip_rect := clip_rect.? or_else Rect{0, 0, dst_pixmap.w, dst_pixmap.h}
+    clip_box := util.rect_to_bbox(clip_rect)
+    if dstb.min.x < clip_box.min.x {
+        if flip.x {
+            srcb.max.x -= (clip_box.min.x - dstb.min.x)
+        } else {
+            srcb.min.x += (clip_box.min.x - dstb.min.x)
+        }
+    }
+    if dstb.min.y < clip_box.min.y {
+        if flip.y {
+            srcb.max.y -= (clip_box.min.y - dstb.min.y)
+        } else {
+            srcb.min.y += (clip_box.min.y - dstb.min.y)
+        }
+    }
+    dstb = util.intersection_bbox(dstb, clip_box)
+    // Return if clip rect and dst rect don't intersect
+    if dstb.max.x < dstb.min.x || dstb.max.y < dstb.min.y {
+        return
+    }
+    sy: Fixed
+    fp.init_from_parts(&sy, srcb.max.y - 1 if flip.y else srcb.min.y, 0)
+
+    dst_ptr := mem.ptr_offset(cast([^]u8)dst_pixmap.pixels, dstb.min.y * dst_pixmap.pitch)
+    src_ptr := mem.ptr_offset(cast([^]u8)src_pixmap.pixels, cast(i32)(sy.i >>  Fixed.Fraction_Width) * src_pixmap.pitch)
+    src_start_x: Fixed
+    fp.init_from_parts(&src_start_x, srcb.max.x - 1 if flip.x else srcb.min.x, 0)
+
+    for y := dstb.min.y; y < dstb.max.y; y += 1 {
+        sx := src_start_x
+        for x := dstb.min.x; x < dstb.max.x; x += 1 {
+            color_idx := src_ptr[cast(int)(sx.i >> Fixed.Fraction_Width)] % len(palette^)
+            if color_idx != 0 {
+                (cast([^]ColorU32)dst_ptr)[x] = palette[color_idx]
+            }
+            sx = fp.add(sx, src_inc_x)
+        }
+        sy = fp.add(sy, src_inc_y)
+        // if sy < 0 {
+        // 	sy = 0
+        // }
+        // sy := math.clamp(sy, cast(f32)srcb.min.y, cast(f32)srcb.max.y - 1)
+        // log.assertf(cast(i32)sy >= srcb.min.y && cast(i32)sy <= srcb.max.y, "%v not in [%v, %v]", sy, srcb.min.y, srcb.max.y)
+        dst_ptr = mem.ptr_offset(dst_ptr, dst_pixmap.pitch)
+        src_ptr = mem.ptr_offset(cast([^]u8)src_pixmap.pixels, (uintptr)(cast(i32)(sy.i >> 18) * src_pixmap.pitch))
+    }
+}
+
 blit_indexed :: proc(
     palette: ^Palette,
     dst_pixmap, src_pixmap: Pixmap,

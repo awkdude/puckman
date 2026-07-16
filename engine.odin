@@ -82,6 +82,7 @@ Engine_Context :: struct {
     editor: Editor_State,
     next_tile_blocked: bool,
     internal_framebuffer: []ColorU32, // [512*512]u8,
+    recorded_input_file: ^os.File,
     // Row-major
     tile_map: [ROWS*COLS]Tile_Type,
     marker_map: [ROWS*COLS]Marker_Tile_Type,
@@ -166,6 +167,10 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
 
     game.internal_framebuffer = make([]ColorU32, INTERN_FRAMEBUFFER_WIDTH * INTERN_FRAMEBUFFER_HEIGHT)
 
+    input_file_err: os.Error
+    game.recorded_input_file, input_file_err = os.open("input.txt", {.Write, .Create, .Trunc})
+    assert(input_file_err == nil)
+
     load_ok: bool
     game.player_spritesheet, load_ok = load_bmp_indexed("textures/pacman.bmp")
     assert(load_ok)
@@ -213,6 +218,7 @@ eng_shutdown :: proc() {
     if game.module.shutdown != nil {
         game.module.shutdown()
     }
+    os.close(game.recorded_input_file)
 }
 
 update_world :: proc() {
@@ -323,17 +329,32 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
     game.last_frame_tick = now
 
     player_is_horz, player_is_vert: bool
+    set_direction_from_input()
     do_update_sim := !game.paused && game.debug_mode != .Editor
     for do_update_sim && game.lag > SIM_UPDATE_INTERVAL {
 	    // Only update once if diff is too big (likely due to debugging)
 	    if game.lag > SIM_LAG_MAX {
 			game.lag = SIM_UPDATE_INTERVAL
 	    }
+
+		input_char: rune
+		switch game.player_target_direction {
+		case .None:
+			input_char = '0'
+		case .Up:
+			input_char = 'U'
+		case .Down:
+			input_char = 'D'
+		case .Left:
+			input_char = 'L'
+		case .Right:
+			input_char = 'R'
+		}
+		os.write_byte(game.recorded_input_file, cast(u8)input_char)
         update_world()
         game.sim_ticks += 1
         game.lag -= SIM_UPDATE_INTERVAL
     }
-    set_direction_from_input()
     fb_pixmap := Pixmap {
         pixels=raw_data(game.internal_framebuffer),
         w=INTERN_FRAMEBUFFER_WIDTH,
@@ -717,6 +738,7 @@ draw_ghosts :: proc() {
             }, inv_color(ghost_color))
         }
     }
+    if true do return
     // Draw ghost's targets
     if game.debug_mode == .Ghost_Target {
 	    rg_texture(game.tile_spritesheet)

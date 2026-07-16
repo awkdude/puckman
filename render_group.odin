@@ -210,7 +210,7 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
         	rg.global_offset = cmd.offset
         case .Blit:
 	        if rg.texture.format.bytes_per_pixel == 4 {
-				blit(
+				blit_fp(
 	                target_pixmap,
 	                rg.texture,
 	                rg.global_offset + cmd.blit.offset,
@@ -220,7 +220,7 @@ rg_to_output :: proc(target_pixmap: Pixmap) {
 	                cmd.blit.flip,
             	)
 			} else if rg.texture.format.bytes_per_pixel == 1 {
-				blit_indexed(
+				blit_indexed_fp(
 					&rg.palette,
 	                target_pixmap,
 	                rg.texture,

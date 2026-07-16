@@ -106,6 +106,7 @@ GHOST_SCATTER_TARGET_TILE_INDEX := [Ghost_Type]i32 {
 PASSABLE_TILES :: bit_set[Tile_Type] {
 	.Dot,
 	.Pellet,
+	.Ghost_Pass,
 	.None,
 	.Unused,
 }
