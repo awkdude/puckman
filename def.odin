@@ -56,6 +56,7 @@ Marker_Tile_Type :: enum u8 {
 	Clyde_Start,
 	Ghost_Decision,
 	Slow_Zone,
+	No_Up_Zone,
 }
 
 Direction :: enum {
@@ -64,6 +65,14 @@ Direction :: enum {
     Down,
     Left,
     Right,
+}
+
+OPPOSITE_DIRECTION := [Direction]Direction {
+	.None = .None,
+	.Up = .Down,
+	.Down = .Up,
+	.Left = .Right,
+	.Right = .Left,
 }
 
 Ghost_Type :: enum {
@@ -82,9 +91,13 @@ GHOST_COLORS := [Ghost_Type]Color4b {
 	.Clyde = {247, 184, 63, 255},
 }
 
-Ghost_State :: enum {
+Ghost_Global_Mode :: enum {
 	Scatter,
 	Chase,
+}
+
+Ghost_Unique_Mode :: enum {
+	None,
 	Frightened,
 	Eaten,
 }
@@ -92,8 +105,8 @@ Ghost_State :: enum {
 Ghost_Actor :: struct {
 	position: vec2f,
 	direction: Direction,
-	state: Ghost_State,
-	target_tile_index: i32,
+	mode: Ghost_Unique_Mode,
+	next_tile_index, target_tile_index: i32,
 }
 
 GHOST_SCATTER_TARGET_TILE_INDEX := [Ghost_Type]i32 {

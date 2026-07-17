@@ -82,6 +82,9 @@ update_editor :: proc() {
 		case .Slow_Zone:
 			p := get_position_from_grid_coord({7, ROWS-2})
 			rg_fill_rect(Rect{p.x, p.y, PLAYER_SIZE, PLAYER_SIZE}, color_tortilla_4b)
+		case .No_Up_Zone:
+			p := get_position_from_grid_coord({7, ROWS-2})
+			rg_fill_rect(Rect{p.x, p.y, PLAYER_SIZE, PLAYER_SIZE}, color_lemon_4b)
 		}
 		draw_text("MARKER: ", get_position_from_tile_index(COLS*(ROWS-1)))
 		rg_fill_rect(Rect{pos.x, pos.y, CELL_SIZE, CELL_SIZE}, color_brown_4b)
@@ -105,6 +108,8 @@ update_editor :: proc() {
 				color = color_green_4b
 			case .Slow_Zone:
 				color = color_tortilla_4b
+			case .No_Up_Zone:
+				color = color_lemon_4b
 			}
 			if util.blink_state(game.frame_counter, 60) == 0 {
 				tile_pos := get_position_from_tile_index(i)
@@ -117,7 +122,7 @@ update_editor :: proc() {
 @(private="file")
 place_marker_tile :: proc() {
 	if !game.editor.unlocked do return
-	DUPABLE_MARKERS := bit_set[Marker_Tile_Type]{.None, .Ghost_Decision, .Slow_Zone}
+	DUPABLE_MARKERS := bit_set[Marker_Tile_Type]{.None, .Ghost_Decision, .Slow_Zone, .No_Up_Zone}
 	tile_placement_tile_index := get_tile_index_from_tile_coord(game.editor.tile_placement_grid_coord)
 	if tile_placement_tile_index < MAZE_LOWER_BOUND || tile_placement_tile_index > MAZE_UPPER_BOUND do return
 	// Clear any occurance of this marker type before setting to tile pos if non-duplicatable
@@ -249,6 +254,7 @@ load_tile_map :: proc() {
 }
 
 save_tile_map :: proc() {
+	if !game.editor.unlocked do return
 	file, err := os.open("maze.txt", {.Write, .Create, .Trunc})
 	assert(err == nil)
 	defer os.close(file)
@@ -256,9 +262,11 @@ save_tile_map :: proc() {
 	assert(sb_err == nil)
 
 	// Write legend comment section
+	strings.write_string(&sb, "# *LEGEND FOR TILE MAP*\n")
 	for tile_type, i in Tile_Type {
 		fmt.sbprintfln(&sb, "# %v: %c", tile_type, CHAR_TILE_MAP[i])
 	}
+	strings.write_string(&sb, "# *LEGEND FOR MARKER MAP*\n")
 	for marker_type, i in Marker_Tile_Type {
 		fmt.sbprintfln(&sb, "# %v: %c", marker_type, CHAR_MARKER_MAP[i])
 	}

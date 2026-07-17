@@ -28,6 +28,7 @@ color_black_4b :: Color4b {0x00, 0x00, 0x00, 0xff}
 color_purple_4b :: Color4b {0xb0, 0x00, 0xff, 0xff}
 color_brown_4b :: Color4b{0x8f, 0x51, 0x29, 0xff}
 color_tortilla_4b :: Color4b{0x99, 0x79, 0x50, 0xff}
+color_lemon_4b :: Color4b {0xef, 0xfd, 0x5f, 0xff}
 
 PLATFORM_BACKEND :: #config(BACKEND, "native")
 
@@ -93,6 +94,7 @@ Engine_Context :: struct {
     tile_spritesheet: Pixmap,
     text_spritesheet: Pixmap,
     ghost_spritesheet: Pixmap,
+    ghost_global_mode: Ghost_Global_Mode,
     ghosts: [Ghost_Type]Ghost_Actor,
     render_group: Render_Group,
     last_frame_tick: time.Tick,
@@ -189,7 +191,7 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     game.ghosts[.Inky].direction = .Up
     game.ghosts[.Clyde].direction = .Down
 
-    game.debug_mode = .Editor
+    game.debug_mode = .Ghost_Target
 
     game.anim = Sprite_Animator {
    		end_frame=2,
@@ -284,18 +286,19 @@ update_world :: proc() {
         game.tile_map[player_tile_index] = .None
         game.player_score += 10
     } else if game.tile_map[player_tile_index] == .Pellet {
-        broadcast_ghost_state(.Frightened)
+        frighten_all(.Frightened)
         game.tile_map[player_tile_index] = .None
         game.player_score += 50
     }
+    calculate_ghost_targets()
     anim_update(&game.ghost_anim, game.last_frame_tick)
     for ghost_index in Ghost_Type {
     	ghost_actor := &game.ghosts[ghost_index]
         ghost_tile_index := get_tile_index_from_position(cast(vec2)ghost_actor.position)
         // Check player collision with ghosts
         if ghost_tile_index == player_tile_index {
-            if ghost_actor.state == .Frightened {
-                ghost_actor.state = .Eaten
+            if ghost_actor.mode == .Frightened {
+                ghost_actor.mode = .Eaten
                 game.eat_count += 1
                 game.player_score += (i32)(1 << cast(u32)game.eat_count) * 100
                 // TODO: set hesitate time
@@ -438,7 +441,7 @@ eng_handle_event :: proc(window_event: util.Window_Event) {
             case util.KEY_F4, util.KEY_F5:
                 game.running = false
             case util.KEY_P:
-           		broadcast_ghost_state(.Frightened)
+           		frighten_all(.Frightened)
             case util.KEY_R:
 	           	reset_level()
             case util.KEY_F1:
@@ -469,6 +472,95 @@ eng_handle_event :: proc(window_event: util.Window_Event) {
     }
 }
 
+calculate_ghost_targets :: proc() {
+	player_tile_index := get_tile_index_from_position(cast(vec2)game.player_position)
+	tile_index_ahead_of_player :: proc(player_tile_index, distance: i32) -> i32 {
+		target_tile_index: i32
+		ok: bool
+		switch game.player_direction {
+		case .None:
+		case .Left:
+	        target_tile_index = player_tile_index-distance
+			col := target_tile_index % COLS
+			player_col := player_tile_index % COLS
+	        ok = col < player_tile_index && col < player_col
+	    case .Right:
+	        target_tile_index = player_tile_index+distance
+			col := target_tile_index % COLS
+			player_col := player_tile_index % COLS
+	        ok = col < COLS && col > player_col
+	    case .Up:
+	        target_tile_index = player_tile_index-COLS*distance
+	        ok = target_tile_index >= COLS
+	    case .Down:
+	        target_tile_index = player_tile_index+COLS*distance
+	        ok = target_tile_index <= (COLS-1)*(ROWS-1)
+	    }
+		return target_tile_index if ok else player_tile_index
+	}
+
+	switch game.ghost_global_mode {
+	case .Scatter:
+		for ghost_index in Ghost_Type {
+			game.ghosts[ghost_index].target_tile_index = GHOST_SCATTER_TARGET_TILE_INDEX[ghost_index]
+		}
+	case .Chase:
+		// Blinky
+		game.ghosts[.Blinky].target_tile_index = player_tile_index
+		// Pinky
+		game.ghosts[.Pinky].target_tile_index = tile_index_ahead_of_player(player_tile_index, 4)
+		// Inky: TODO
+		ahead_tile_index := tile_index_ahead_of_player(player_tile_index, 2)
+		ahead_tile_coord := get_tile_coord_from_tile_index(ahead_tile_index)
+		blinky_tile_coord := get_tile_coord_from_position(cast(vec2)game.ghosts[.Blinky].position)
+		dist_vec := (ahead_tile_coord - blinky_tile_coord) * 2
+		final_tile_coord := blinky_tile_coord + dist_vec
+		final_tile_coord.x = math.clamp(final_tile_coord.x, 0, COLS-1)
+		final_tile_coord.y = math.clamp(final_tile_coord.y, 0, ROWS-1)
+		game.ghosts[.Inky].target_tile_index = get_tile_index_from_tile_coord(final_tile_coord)
+		// Clyde
+		player_tile_coord := get_tile_coord_from_tile_index(player_tile_index)
+		ghost_tile_coord := get_tile_coord_from_position(
+			cast(vec2)game.ghosts[.Clyde].position
+		)
+		tile_dx := (player_tile_coord.x - ghost_tile_coord.x)
+		tile_dy := (player_tile_coord.y - ghost_tile_coord.y)
+		if ((tile_dx * tile_dx) + (tile_dy * tile_dy)) <= (8*8) {
+			game.ghosts[.Clyde].target_tile_index = GHOST_SCATTER_TARGET_TILE_INDEX[.Clyde]
+		} else {
+			game.ghosts[.Clyde].target_tile_index = player_tile_index
+		}
+	}
+}
+
+// Returns next tile that ghost will target
+ghost_decide_next_move :: proc(ghost: ^Ghost_Actor) -> i32 {
+	min_dist_sq: i32
+	min_dir: Maybe(Direction)
+	ghost_tile_index := get_tile_index_from_position(cast(vec2)ghost.position)
+	min_adj_tile_index := ghost_tile_index
+	target_tile_coord := get_tile_coord_from_tile_index(ghost.target_tile_index)
+	for direction in Direction {
+		if direction == .None do continue
+		if direction == OPPOSITE_DIRECTION[ghost.direction] do continue
+		adj_tile_index, ok := get_adjacent_tile_index(ghost_tile_index, direction)
+		if !ok do continue
+		if game.tile_map[adj_tile_index] not_in PASSABLE_TILES do continue
+		adj_tile_coord := get_tile_coord_from_tile_index(adj_tile_index)
+		dist := target_tile_coord - adj_tile_coord
+		dist_sq := (dist.x * dist.x) + (dist.y * dist.y)
+		if dist_sq < min_dist_sq {
+			min_dir = direction
+			min_dist_sq = dist_sq
+			min_adj_tile_index = adj_tile_index
+		}
+	}
+	if min_dir, ok := min_dir.?; ok {
+		ghost.direction = min_dir
+	}
+	return min_adj_tile_index
+}
+
 // Sets player's target direction from input.
 // Gamepad input has priority over keyboard
 set_direction_from_input :: proc "contextless" () {
@@ -485,6 +577,7 @@ set_direction_from_input :: proc "contextless" () {
 	}
 	// Read thumbstick input if dpad is not pressed
 	if game.player_target_direction == nil {
+		// TODO:
 		switch {
 		case game.input_state.gamepad.axes[.LEFT_X] < -THUMBSTICK_THRESHOLD:
 			game.player_target_direction = .Left
@@ -514,22 +607,32 @@ set_direction_from_input :: proc "contextless" () {
 	}
 }
 
-// Set state for all ghosts
-broadcast_ghost_state :: proc(state: Ghost_State) {
+// Make all ghosts frightened
+frighten_all :: proc(state: Ghost_Unique_Mode) {
 	for &ghost in game.ghosts {
-		if ghost.state == .Scatter || ghost.state == .Chase {
-			ghost.state = state
+		if ghost.mode == .None {
+			ghost.mode = .Frightened
 		}
 	}
-	// TODO: change this code and apply for more states
-	if state == .Frightened {
-		game.frightened_sim_tick = 30*6
-		game.eat_count = 0
-	}
+	game.frightened_sim_tick = 30*6
+	game.eat_count = 0
 }
 
-// TODO: maybe assert or return maybe type if tile out of bounds
-get_adjacent_tile_type :: proc "contextless" (#any_int tile_idx: i32, direction: Direction) -> (Tile_Type, bool) #optional_ok {
+get_adjacent_tile_type :: proc "contextless" (
+	#any_int tile_idx: i32,
+ 	direction: Direction) -> (Tile_Type, bool) #optional_ok
+{
+    adj_idx, ok := get_adjacent_tile_index(tile_idx, direction)
+    if ok {
+	    return game.tile_map[adj_idx], true
+    }
+    return nil, false
+}
+
+get_adjacent_tile_index :: proc "contextless" (
+	#any_int tile_idx: i32,
+ 	direction: Direction) -> (i32, bool) #optional_ok
+{
     adj_idx: i32
     ok: bool
     switch direction {
@@ -548,10 +651,7 @@ get_adjacent_tile_type :: proc "contextless" (#any_int tile_idx: i32, direction:
         adj_idx = tile_idx+COLS
         ok = adj_idx <= (COLS-1)*(ROWS-1)
     }
-    if ok {
-	    return game.tile_map[adj_idx], true
-    }
-    return nil, false
+    return adj_idx, ok
 }
 
 get_tile_coord_from_tile_index :: #force_inline proc "contextless" (#any_int idx: i32) -> vec2 {
@@ -562,6 +662,10 @@ get_tile_index_from_position :: #force_inline proc "contextless" (pos: vec2) -> 
 	col := pos.x / CELL_SIZE
 	row := pos.y / CELL_SIZE
 	return row * COLS + col
+}
+
+get_tile_coord_from_position :: #force_inline proc "contextless" (pos: vec2) -> vec2 {
+	return {pos.x / CELL_SIZE, pos.y / CELL_SIZE}
 }
 
 get_tile_index_from_tile_coord :: #force_inline proc "contextless" (gp: vec2) -> i32 {
@@ -681,7 +785,7 @@ draw_ghosts :: proc() {
 	        sprite_data: Tile_Sprite
             ghost_actor := &game.ghosts[ghost_index]
             draw_pos := cast(vec2)ghost_actor.position - {PLAYER_SIZE, PLAYER_SIZE}/2
-            switch game.ghosts[ghost_index].state {
+            switch game.ghosts[ghost_index].mode {
             case .Eaten:
                 if ghost_actor.direction == .Left || ghost_actor.direction == .Right {
                     rg_blit(
@@ -708,7 +812,7 @@ draw_ghosts :: proc() {
                     rect={cast(i32)game.ghost_anim.frame_index*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE}
                 }
                 rg_blit(draw_pos, sprite_data.rect, sprite_data.flip)
-            case .Scatter, .Chase:
+            case .None:
                 rg_palette(1, GHOST_COLORS[ghost_index])
 	        	sprite_data = GHOST_SPRITES[ghost_actor.direction][game.ghost_anim.frame_index]
                 rg_blit(draw_pos, sprite_data.rect, sprite_data.flip)
@@ -738,45 +842,33 @@ draw_ghosts :: proc() {
             }, inv_color(ghost_color))
         }
     }
-    if true do return
     // Draw ghost's targets
     if game.debug_mode == .Ghost_Target {
+    	slight_offset := [Ghost_Type]vec2 {
+	     	.Blinky = {0, -1},
+	     	.Pinky = {1, 0},
+	     	.Inky = {0, 1},
+	     	.Clyde = {-1, 0},
+	    }
 	    rg_texture(game.tile_spritesheet)
+		fake_ghosts := game.ghosts
 	    for ghost_index in Ghost_Type {
+			previous_tile_indices: [dynamic; 128]i32
 		   	rg_palette(1, GHOST_COLORS[ghost_index])
-		    scatter_target_pos := get_position_from_tile_index(game.ghosts[ghost_index].target_tile_index)
-		    rg_blit(scatter_target_pos, Rect{14*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE})
-			ghost_tile_index := get_tile_index_from_position(cast(vec2)game.ghosts[ghost_index].position)
-			ghost_grid_coord := get_tile_coord_from_tile_index(ghost_tile_index)
-			target_tile_grid_coord := get_tile_coord_from_tile_index(game.ghosts[ghost_index].target_tile_index)
-			current_grid_coord := ghost_grid_coord
-			current_direction := game.ghosts[ghost_index].direction
-			past_grid_coords: [dynamic; 128]vec2
-			for current_grid_coord != target_tile_grid_coord {
-				if slice.contains(past_grid_coords[:], current_grid_coord) do break
-				next_coord := current_grid_coord
-				min_dist_sq: i32
-				next_dir_coord: [Direction]vec2
-				next_dir_coord[.Up] = next_coord + {0, -1}
-				next_dir_coord[.Down] = next_coord + {0, 1}
-				next_dir_coord[.Left] = next_coord + {-1, 0}
-				next_dir_coord[.Right] = next_coord + {1, 0}
-				for coord, i in slice.enumerated_array(&next_dir_coord) {
-					if coord == {} do continue
-					if coord.x < 0 do continue
-					if coord.x > COLS-1 do continue
-					if coord.y < 0 do continue
-					if coord.y > ROWS-1 do continue
-					tile_index := get_tile_index_from_tile_coord(coord)
-					if game.tile_map[tile_index] not_in PASSABLE_TILES do continue
-					dx := (current_grid_coord.x - target_tile_grid_coord.x)
-					dy := (current_grid_coord.y - target_tile_grid_coord.y)
-					dist_sq := dx * dx + dy * dy
-					if min_dist_sq == {} || dist_sq < min_dist_sq {
-						min_dist_sq = dist_sq
-					}
-				}
-
+		    target_tile_pos := get_position_from_tile_index(game.ghosts[ghost_index].target_tile_index)
+		    rg_blit(
+				target_tile_pos + slight_offset[ghost_index],
+			 	Rect{14*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE}
+			)
+			// FIXME:
+			for {
+				ghost_tile_index := get_tile_index_from_position(cast(vec2)fake_ghosts[ghost_index].position)
+				if ghost_tile_index == fake_ghosts[ghost_index].target_tile_index do break
+				next_tile_index := ghost_decide_next_move(&fake_ghosts[ghost_index])
+				fake_ghosts[ghost_index].position = cast(vec2f)get_position_from_tile_index(next_tile_index)
+				rg_blit(cast(vec2)fake_ghosts[ghost_index].position, Rect{15*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE})
+				append(&previous_tile_indices, next_tile_index)
+				if slice.contains(previous_tile_indices[:], next_tile_index) do break
 			}
 	    }
     }

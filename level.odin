@@ -27,8 +27,8 @@ reset_level :: proc() {
 			game.ghosts[.Clyde].position= cast(vec2f)vec2{pos.x, pos.y + CELL_SIZE/2}
 		}
 	}
+	game.ghost_global_mode = .Chase
 	for ghost_index in Ghost_Type {
-		game.ghosts[ghost_index].state = .Scatter
 		game.ghosts[ghost_index].target_tile_index = GHOST_SCATTER_TARGET_TILE_INDEX[ghost_index]
 	}
 }
