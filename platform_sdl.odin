@@ -220,6 +220,8 @@ when PLATFORM_BACKEND == "sdl" {
 	                    cast(i32)sdl_event.window.data2,
 	                },
 	            }
+				window_surface := sdl.GetWindowSurface(sdl_window)
+				log.debugf("W: %v, H: %v", window_surface.w, window_surface.h)
 	        case .MOUSE_WHEEL: {
 	            window_event = util.Window_Event {
 	                type=.Mouse_Wheel,

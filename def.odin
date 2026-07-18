@@ -62,8 +62,8 @@ Marker_Tile_Type :: enum u8 {
 Direction :: enum {
     None,
     Up,
-    Down,
     Left,
+    Down,
     Right,
 }
 
@@ -106,7 +106,7 @@ Ghost_Actor :: struct {
 	position: vec2f,
 	direction: Direction,
 	mode: Ghost_Unique_Mode,
-	next_tile_index, target_tile_index: i32,
+	tile_index, target_tile_index: i32,
 }
 
 GHOST_SCATTER_TARGET_TILE_INDEX := [Ghost_Type]i32 {
@@ -119,9 +119,9 @@ GHOST_SCATTER_TARGET_TILE_INDEX := [Ghost_Type]i32 {
 PASSABLE_TILES :: bit_set[Tile_Type] {
 	.Dot,
 	.Pellet,
-	.Ghost_Pass,
+	// .Ghost_Pass, // TODO: remove this
 	.None,
-	.Unused,
+	// .Unused,
 }
 
 GHOST_PASSABLE_TILES :: bit_set[Tile_Type] {

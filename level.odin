@@ -8,6 +8,7 @@ import "core:strings"
 
 reset_level :: proc() {
 	pos: vec2
+	game.tile_map = game.full_tile_map
 	for marker, i in game.marker_map {
 		#partial switch marker {
 		case .Player_Start:
@@ -29,6 +30,7 @@ reset_level :: proc() {
 	}
 	game.ghost_global_mode = .Chase
 	for ghost_index in Ghost_Type {
+		game.ghosts[ghost_index].mode = .None
 		game.ghosts[ghost_index].target_tile_index = GHOST_SCATTER_TARGET_TILE_INDEX[ghost_index]
 	}
 }

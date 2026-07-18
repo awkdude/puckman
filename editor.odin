@@ -141,8 +141,8 @@ place_tile :: proc() {
 	if !game.editor.unlocked do return
 	tile_placement_tile_index := get_tile_index_from_tile_coord(game.editor.tile_placement_grid_coord)
 	if tile_placement_tile_index < MAZE_LOWER_BOUND || tile_placement_tile_index > MAZE_UPPER_BOUND do return
-	old_tile := game.tile_map[tile_placement_tile_index]
-	game.tile_map[tile_placement_tile_index] = cast(Tile_Type)game.editor.selected_tile
+	old_tile := game.full_tile_map[tile_placement_tile_index]
+	game.full_tile_map[tile_placement_tile_index] = cast(Tile_Type)game.editor.selected_tile
 	if game.editor.selected_tile != old_tile {
 		tile_edit := Tile_Edit {
 			tile_index=tile_placement_tile_index,
@@ -163,7 +163,7 @@ undo_tile_edit :: proc() {
 	if game.editor.edit_head == game.editor.edit_tail do return
 	game.editor.edit_tail = util.wrap(game.editor.edit_tail - 1, len(game.editor.edit_ring_buffer))
 	tile_edit := game.editor.edit_ring_buffer[game.editor.edit_tail]
-	game.tile_map[tile_edit.tile_index] = tile_edit.old
+	game.full_tile_map[tile_edit.tile_index] = tile_edit.old
 }
 
 editor_handle_event :: proc(window_event: util.Window_Event) {
@@ -238,7 +238,7 @@ load_tile_map :: proc() {
         index := strings.index_rune(CHAR_TILE_MAP, cast(rune)level_data[data_i])
         log.assertf(index != -1 && index < len(Tile_Type), "Unknown tile char: %c", level_data[data_i])
         tile := cast(Tile_Type)index
-        game.tile_map[tile_i] = tile
+        game.full_tile_map[tile_i] = tile
         tile_i += 1
     }
     data_i += 1
@@ -271,7 +271,7 @@ save_tile_map :: proc() {
 		fmt.sbprintfln(&sb, "# %v: %c", marker_type, CHAR_MARKER_MAP[i])
 	}
 	// Write tile data into maze.txt
-	for tile, i in game.tile_map {
+	for tile, i in game.full_tile_map {
 		strings.write_rune(&sb, cast(rune)CHAR_TILE_MAP[cast(int)tile])
 		if cast(i32)i % COLS == COLS-1 {
 			strings.write_rune(&sb, '\n')
