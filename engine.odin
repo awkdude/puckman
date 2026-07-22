@@ -73,13 +73,13 @@ Engine_Update :: struct #all_or_none {
 
 Engine_Context :: struct {
     running: bool,
+    step_mode: bool,
     init_info: Engine_Init,
     update_info: Engine_Update,
     mouse_position: vec2,
-    player_position: vec2f,
     debug_mode: Debug_Mode,
     position: vec2f,
-    player_direction, player_target_direction: Direction,
+    player_target_direction: Direction,
     editor: Editor_State,
     internal_framebuffer: []ColorU32, // [512*512]u8,
     recorded_input_file: ^os.File,
@@ -88,15 +88,14 @@ Engine_Context :: struct {
     marker_map: [ROWS*COLS]Marker_Tile_Type,
     input_state: util.Input_State,
     player_spritesheet:  util.Pixmap,
-    player_score: i32,
-    player_tile_index: i32,
-    player_num_lives: i32,
+    player: Player,
     tile_spritesheet: Pixmap,
     text_spritesheet: Pixmap,
     ghost_spritesheet: Pixmap,
     ghost_global_mode: Ghost_Global_Mode,
     ghosts: [Ghost_Type]Ghost_Actor,
     eaten_ghost: Maybe(Ghost_Type),
+    ghost_pass_tile_index: i32,
     render_group: Render_Group,
     last_frame_tick: time.Tick,
     sim_ticks, frame_counter: int,
@@ -134,7 +133,7 @@ Module_Handle_Event_Proc :: #type proc(event: util.Window_Event)
 Module_Shutdown_Proc     :: #type proc()
 
 game: ^Engine_Context
-SIM_UPDATE_INTERVAL :: 33333 * time.Microsecond
+SIM_UPDATE_INTERVAL :: 16666 * time.Microsecond
 SIM_LAG_MAX :: 3 * SIM_UPDATE_INTERVAL
 
 eng_init :: proc(init_info: Engine_Init) -> bool {
@@ -164,8 +163,8 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     	path="textures/icon.ico",
     })
 
-    game.player_direction = .None
-    game.player_num_lives = 3
+    game.player.direction = .None
+    game.player.num_lives = 3
 
     game.render_group.palette = game.palette
 
@@ -187,6 +186,8 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
 
     load_tile_map()
     reset_level()
+
+    game.paused = true
     game.lag = SIM_UPDATE_INTERVAL
 
     game.ghosts[.Blinky].direction = .Left
@@ -238,12 +239,14 @@ update_world :: proc() {
     	ghost_actor := &game.ghosts[ghost_index]
         // ghost_tile_index := get_tile_index_from_position(cast(vec2)ghost_actor.position)
         // Check player collision with ghosts
-        if ghost_actor.tile_index == game.player_tile_index {
+        if ghost_actor.tile_index == game.player.tile_index {
             if ghost_actor.mode == .Frightened {
                 ghost_actor.mode = .Eaten
                 game.eat_count += 1
-                game.player_score += (i32)(1 << cast(u32)game.eat_count) * 100
-                game.sim_pause_end_tick = game.sim_ticks + 30
+                game.player.score += (i32)(1 << cast(u32)game.eat_count) * 100
+                if !game.step_mode {
+	                game.sim_pause_end_tick = game.sim_ticks + 30
+                }
                 game.eaten_ghost = ghost_index
                 // TODO: set hesitate time
             } else {
@@ -272,7 +275,9 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
 
 	now := time.tick_now()
     diff := time.tick_diff(game.last_frame_tick, now)
-	game.lag += diff
+	if !game.step_mode {
+		game.lag += diff
+	}
     game.last_frame_tick = now
 
     set_direction_from_input()
@@ -309,7 +314,7 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
         format=game.init_info.pixel_format,
     }
     game.render_group.palette = game.palette
-    rg_clear(Color4b{0, 0, 27, 255})
+    rg_clear(Color4b{80, 0, 0, 255} if game.step_mode else Color4b{0, 0, 27, 255})
 
     v := (u8)(util.time_sin() * 255.0)
     rg_palette(1, {v, v, v, 255})
@@ -320,20 +325,35 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
     if game.paused && game.debug_mode != .Editor {
     	draw_text("PAUSED!", get_position_from_grid_coord({13,13}))
     }
-    tile_pos := get_tile_coord_from_tile_index(game.player_tile_index)
+    tile_pos := get_tile_coord_from_tile_index(game.player.tile_index)
     #partial switch game.debug_mode {
    	case .None:
 	    draw_text("HIGH SCORE", get_position_from_grid_coord({11, 0}))
-	    score_text := fmt.tprintf("%02d", game.player_score)
+	    score_text := fmt.tprintf("%02d", game.player.score)
 	    draw_text(score_text, get_position_from_grid_coord({5, 1}))
     case .Ghost_Target:
     	 draw_text("TARGET", {0, 0})
+         blinky_tile_coord := get_tile_coord_from_tile_index(game.ghosts[.Blinky].tile_index)
+         blinky_next_tile_coord := get_tile_coord_from_tile_index(game.ghosts[.Blinky].next_tile_index)
+         text := fmt.tprintf("B Tile: (%02v, %02v)", blinky_tile_coord.x, blinky_tile_coord.y)
+         draw_text(text, get_position_from_grid_coord({0, 1}))
+         text = fmt.tprintf("B Next: (%02v, %02v)", blinky_next_tile_coord.x, blinky_next_tile_coord.y)
+         draw_text(text, get_position_from_grid_coord({0, 2}))
+         text = fmt.tprintf("Dir: %v", game.ghosts[.Blinky].direction)
+         draw_text(text, get_position_from_grid_coord({17, 2}))
 	case .Editor:
 		draw_text("EDITOR", {0, 0})
 		src_xoffset: i32 = 52 if game.editor.unlocked else 51
 		blit_sprite(.Small, {6*CELL_SIZE, 0}, vec2{src_xoffset * CELL_SIZE, 0})
 	case .Grid:
 		draw_text("GRID", {0, 0})
+		mouse_tile_coord := get_tile_coord_from_position((vec2)(cast(vec2f)game.input_state.mouse_position * cast(vec2f)INTERN_FRAMEBUFFER_DIMS / framebuffer_dims))
+		mouse_grid_coord_text := fmt.tprintf(
+			"(%02v, %02v)",
+		 	mouse_tile_coord.x,
+		 	mouse_tile_coord.y,
+		)
+		draw_text(mouse_grid_coord_text, get_position_from_grid_coord({6, 0}))
 	}
 	if game.debug_mode == .Editor {
 		update_editor()
@@ -384,13 +404,24 @@ eng_handle_event :: proc(window_event: util.Window_Event) {
                 game.running = false
             case util.KEY_P:
            		frighten_all(.Frightened)
+            case util.KEY_M:
+	            if game.ghost_global_mode == .Scatter {
+	            	game.ghost_global_mode = .Chase
+	            } else {
+	            	game.ghost_global_mode = .Scatter
+	            }
+            case util.KEY_F9:
+            	game.step_mode = !game.step_mode
+             	game.lag = 0
+            case util.KEY_ADD:
+            	game.lag = SIM_UPDATE_INTERVAL
             case util.KEY_R:
 	           	reset_level()
             case util.KEY_F1:
             	mode_int := cast(int)game.debug_mode
             	mode_int = util.wrap(mode_int + 1, len(Debug_Mode))
              	game.debug_mode = cast(Debug_Mode)mode_int
-	              log.debug(mode_int)
+	            log.debug(mode_int)
             case util.KEY_PAGEUP, util.KEY_PAGEDOWN:
             	game.window_size_index = (game.window_size_index + 1) % len(window_sizes)
 	            game.init_info.platform_command_proc(util.Platform_Command{

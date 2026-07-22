@@ -7,6 +7,17 @@ Debug_Mode :: enum {
 	Editor,
 }
 
+Actor :: struct {
+	position: vec2f,
+	direction: Direction,
+	tile_index: i32,
+}
+
+Player :: struct {
+   	using actor: Actor,
+   	score, num_lives: i32,
+}
+
 CHAR_TILE_MAP := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 CHAR_MARKER_MAP := ".!@#$%^&*()"
 
@@ -59,7 +70,7 @@ Marker_Tile_Type :: enum u8 {
 	No_Up_Zone,
 }
 
-Direction :: enum {
+Direction :: enum u8 {
     None,
     Up,
     Left,
@@ -103,16 +114,16 @@ Ghost_Unique_Mode :: enum {
 }
 
 Ghost_Actor :: struct {
-	position: vec2f,
-	direction: Direction,
+	using actor: Actor,
 	mode: Ghost_Unique_Mode,
-	tile_index, target_tile_index: i32,
+	next_tile_index, target_tile_index: i32,
+	ticks_until_next_tile_change: int,
 }
 
 GHOST_SCATTER_TARGET_TILE_INDEX := [Ghost_Type]i32 {
 	.Blinky = COLS-3,
 	.Pinky = 2,
-	.Inky = COLS*ROWS-1,
+	.Inky = (COLS*ROWS)-1,
 	.Clyde = COLS*(ROWS-1),
 }
 
