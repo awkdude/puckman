@@ -95,7 +95,7 @@ Engine_Context :: struct {
     ghost_global_mode: Ghost_Global_Mode,
     ghosts: [Ghost_Type]Ghost_Actor,
     eaten_ghost: Maybe(Ghost_Type),
-    ghost_pass_tile_index: i32,
+    ghost_pass_tile_coord: Tile_Coord,
     render_group: Render_Group,
     last_frame_tick: time.Tick,
     sim_ticks, frame_counter: int,
@@ -108,7 +108,9 @@ Engine_Context :: struct {
     palette: Palette,
     frightened_sim_tick: int,
     paused: bool,
-    eat_count: i32,
+    ghost_eat_count: i32,
+    max_num_dots, dots_remaining: i32,
+
 
     module: struct {
         dynlib_ptr: dynlib.Library,
@@ -239,11 +241,11 @@ update_world :: proc() {
     	ghost_actor := &game.ghosts[ghost_index]
         // ghost_tile_index := get_tile_index_from_position(cast(vec2)ghost_actor.position)
         // Check player collision with ghosts
-        if ghost_actor.tile_index == game.player.tile_index {
+        if ghost_actor.tile_coord == game.player.tile_coord {
             if ghost_actor.mode == .Frightened {
                 ghost_actor.mode = .Eaten
-                game.eat_count += 1
-                game.player.score += (i32)(1 << cast(u32)game.eat_count) * 100
+                game.ghost_eat_count += 1
+                game.player.score += (i32)(1 << cast(u32)game.ghost_eat_count) * 100
                 if !game.step_mode {
 	                game.sim_pause_end_tick = game.sim_ticks + 30
                 }
@@ -323,24 +325,29 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
     draw_player()
     draw_ghosts()
     if game.paused && game.debug_mode != .Editor {
-    	draw_text("PAUSED!", get_position_from_grid_coord({13,13}))
+    	draw_text("PAUSED!", get_position_from_tile_coord({13,13}))
     }
-    tile_pos := get_tile_coord_from_tile_index(game.player.tile_index)
+    tile_pos := get_position_from_tile_coord(game.player.tile_coord)
     #partial switch game.debug_mode {
    	case .None:
-	    draw_text("HIGH SCORE", get_position_from_grid_coord({11, 0}))
+	    draw_text("HIGH SCORE", get_position_from_tile_coord({11, 0}))
 	    score_text := fmt.tprintf("%02d", game.player.score)
-	    draw_text(score_text, get_position_from_grid_coord({5, 1}))
+	    draw_text(score_text, get_position_from_tile_coord({5, 1}))
     case .Ghost_Target:
-    	 draw_text("TARGET", {0, 0})
-         blinky_tile_coord := get_tile_coord_from_tile_index(game.ghosts[.Blinky].tile_index)
-         blinky_next_tile_coord := get_tile_coord_from_tile_index(game.ghosts[.Blinky].next_tile_index)
-         text := fmt.tprintf("B Tile: (%02v, %02v)", blinky_tile_coord.x, blinky_tile_coord.y)
-         draw_text(text, get_position_from_grid_coord({0, 1}))
-         text = fmt.tprintf("B Next: (%02v, %02v)", blinky_next_tile_coord.x, blinky_next_tile_coord.y)
-         draw_text(text, get_position_from_grid_coord({0, 2}))
-         text = fmt.tprintf("Dir: %v", game.ghosts[.Blinky].direction)
-         draw_text(text, get_position_from_grid_coord({17, 2}))
+        draw_text("TARGET", {0, 0})
+        // blinky_tile_coord := game.ghosts[.Blinky].tile_coord
+        // blinky_next_tile_coord := game.ghosts[.Blinky].next_tile_coord
+        // text := fmt.tprintf("B Tile: (%02v, %02v)", blinky_tile_coord.x, blinky_tile_coord.y)
+        // draw_text(text, get_position_from_tile_coord({0, 1}))
+        // text = fmt.tprintf("B Next: (%02v, %02v)", blinky_next_tile_coord.x, blinky_next_tile_coord.y)
+        // draw_text(text, get_position_from_tile_coord({0, 2}))
+        // text = fmt.tprintf("Dir: %v", game.ghosts[.Blinky].direction)
+        // draw_text(text, get_position_from_tile_coord({17, 2}))
+
+        text := fmt.tprintf("P Tile: (%02v, %02v)", game.player.tile_coord.x, game.player.tile_coord.y)
+        draw_text(text, get_position_from_tile_coord({0, 1}))
+        text = fmt.tprintf("Dots: %03d", game.dots_remaining)
+        draw_text(text, get_position_from_tile_coord({0, 2}))
 	case .Editor:
 		draw_text("EDITOR", {0, 0})
 		src_xoffset: i32 = 52 if game.editor.unlocked else 51
@@ -353,7 +360,7 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
 		 	mouse_tile_coord.x,
 		 	mouse_tile_coord.y,
 		)
-		draw_text(mouse_grid_coord_text, get_position_from_grid_coord({6, 0}))
+		draw_text(mouse_grid_coord_text, get_position_from_tile_coord({6, 0}))
 	}
 	if game.debug_mode == .Editor {
 		update_editor()
@@ -473,7 +480,7 @@ draw_maze :: proc() {
 					tile_sprite.rect = Rect{10*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE}
 				}
 		        rg_blit(
-		         	CELL_SIZE * get_tile_coord_from_tile_index(i),
+		         	CELL_SIZE * cast(vec2)get_tile_coord_from_tile_index(i),
 		          	tile_sprite.rect,
 		           	tile_sprite.flip,
 		        )

@@ -73,14 +73,19 @@ load_bmp_indexed :: proc(
     w, h := cast(int)bmp_header.width, cast(int)bmp_header.height
     // TODO: optimize: maybe try os.read() entire image data then flip imag in-place
     pixels := cast([^]u8)pixmap.pixels
-    os.read_ptr(file, pixmap.pixels, w*h)
-	for y in 0..<h/2 {
-		y_inv := (h - 1) - y
-		for x in 0..<w {
-			top := &pixels[y * w + x]
-			bottom := &pixels[y_inv * w + x]
-			top^, bottom^ = bottom^, top^
-		}
-	}
+    // os.read_ptr(file, pixmap.pixels, w*h)
+    // FIXME: pixmaps pitch need to be 16-byte aligned
+	//    for y in 0..<h/2 {
+	// 	y_inv := (h - 1) - y
+	// 	for x in 0..<w {
+	// 		top := &pixels[y * w + x]
+	// 		bottom := &pixels[y_inv * w + x]
+	// 		top^, bottom^ = bottom^, top^
+	// 	}
+	// }
+    for y := pixmap.h - 1; y >= 0; y -= 1 {
+        row_ptr := &pixels[y * pixmap.pitch]
+        os.read_ptr(file, row_ptr, w)
+    }
     return pixmap, true
 }

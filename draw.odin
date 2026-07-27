@@ -249,7 +249,8 @@ blit_indexed_fp :: proc(
     for y := dstb.min.y; y < dstb.max.y; y += 1 {
         sx := src_start_x
         for x := dstb.min.x; x < dstb.max.x; x += 1 {
-            color_idx := src_ptr[cast(int)(sx.i >> Fixed.Fraction_Width)] % len(palette^)
+            final_sx := math.clamp(sx.i >> Fixed.Fraction_Width, srcb.min.x, srcb.max.x)
+            color_idx := src_ptr[cast(int)(final_sx)] % len(palette^)
             if color_idx != 0 {
                 (cast([^]ColorU32)dst_ptr)[x] = palette[color_idx]
             }
@@ -262,7 +263,8 @@ blit_indexed_fp :: proc(
         // sy := math.clamp(sy, cast(f32)srcb.min.y, cast(f32)srcb.max.y - 1)
         // log.assertf(cast(i32)sy >= srcb.min.y && cast(i32)sy <= srcb.max.y, "%v not in [%v, %v]", sy, srcb.min.y, srcb.max.y)
         dst_ptr = mem.ptr_offset(dst_ptr, dst_pixmap.pitch)
-        src_ptr = mem.ptr_offset(cast([^]u8)src_pixmap.pixels, (uintptr)(cast(i32)(sy.i >> 18) * src_pixmap.pitch))
+        final_sy := math.clamp(sy.i >> Fixed.Fraction_Width, srcb.min.y, srcb.max.y - 1)
+        src_ptr = mem.ptr_offset(cast([^]u8)src_pixmap.pixels, (uintptr)(final_sy * src_pixmap.pitch))
     }
 }
 

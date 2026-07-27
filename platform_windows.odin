@@ -19,6 +19,7 @@ import "base:runtime"
 import "core:strings"
 import "core:c/libc"
 import "odinlib:util"
+import "vendor:windows/xaudio2"
 
 when PLATFORM_BACKEND == "native" {
 
@@ -26,6 +27,7 @@ USE_OPENGL :: false
 frame_tick: time.Tick
 vec2 :: util.vec2
 window_handle: win.HWND
+ixaudio2: ^xaudio2.IXAudio2
 running: bool
 global_context: runtime.Context
 bitmap_handle: win.HBITMAP
@@ -176,6 +178,55 @@ main :: proc() {
         SwapIntervalEXT(1)
     }
     win.XInputEnable(true)
+    com_result := win.CoInitializeEx(nil, .MULTITHREADED)
+    if win.FAILED(com_result) {
+        panic("COM failed")
+    }
+    assert(win.SUCCEEDED(xaudio2.Create(&ixaudio2, {.DEBUG_ENGINE}, xaudio2.USE_DEFAULT_PROCESSOR)))
+    mastering_voice: ^xaudio2.IXAudio2MasteringVoice
+    assert(win.SUCCEEDED(ixaudio2->CreateMasteringVoice(&mastering_voice)))
+    source_voice: ^xaudio2.IXAudio2SourceVoice
+    samples_per_sec: u32 = 44100
+    bits_per_sample: u32 = 16
+    num_channels: u32 = 2
+    block_align := num_channels*(bits_per_sample/8)
+    wave_format := win.WAVEFORMATEX {
+        wFormatTag=win.WAVE_FORMAT_PCM,
+        nChannels=cast(u16)num_channels,
+        nSamplesPerSec=samples_per_sec,
+        nBlockAlign=cast(u16)block_align,
+        nAvgBytesPerSec=samples_per_sec * block_align,
+        wBitsPerSample=cast(u16)bits_per_sample,
+        cbSize=0,
+    }
+    assert(win.SUCCEEDED(ixaudio2->CreateSourceVoice(&source_voice, &wave_format)))
+    audio_buffer_size := samples_per_sec*block_align*2
+    audio_buffer := make([]u8, audio_buffer_size)
+    buffer_index: u32 = 0
+    phase: f32 = 0
+    for buffer_index < audio_buffer_size {
+        // n: f32 = 523.0 + util.normalize_to_range(cast(f32)buffer_index, 0, cast(f32)audio_buffer_size, 0, 100)
+        n := 200.0 + math.sin(3.0 * math.TAU * (cast(f32)buffer_index / cast(f32)audio_buffer_size)) * 300
+        phase += 2 * math.PI * (n / 44100.0)
+        sample := (i16)(math.sin(phase) * cast(f32)bits.I16_MAX * 0.05)
+        audio_buffer[buffer_index+0] = cast(u8)sample
+        audio_buffer[buffer_index+1] = cast(u8)(sample >> 8)
+        audio_buffer[buffer_index+2] = cast(u8)sample
+        audio_buffer[buffer_index+3] = cast(u8)(sample >> 8)
+        buffer_index += 4
+    }
+    xaudio_buffer := xaudio2.BUFFER {
+        Flags={.END_OF_STREAM},
+        AudioBytes=audio_buffer_size,
+        pAudioData=raw_data(audio_buffer),
+        PlayBegin=0,
+        PlayLength=0,
+        LoopBegin=0,
+        LoopLength=0,
+        LoopCount=xaudio2.LOOP_INFINITE,
+    }
+    assert(win.SUCCEEDED(source_voice->SubmitSourceBuffer(&xaudio_buffer)))
+    assert(win.SUCCEEDED(source_voice->Start({})))
     loop: for {
         message: win.MSG
 

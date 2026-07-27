@@ -10,7 +10,7 @@ Debug_Mode :: enum {
 Actor :: struct {
 	position: vec2f,
 	direction: Direction,
-	tile_index: i32,
+	tile_coord: Tile_Coord,
 }
 
 Player :: struct {
@@ -20,6 +20,8 @@ Player :: struct {
 
 CHAR_TILE_MAP := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 CHAR_MARKER_MAP := ".!@#$%^&*()"
+
+Tile_Coord :: distinct [2]i32
 
 // TODO: Maybe rename this Wall_Tile_Type
 Tile_Type :: enum u8 {
@@ -116,15 +118,14 @@ Ghost_Unique_Mode :: enum {
 Ghost_Actor :: struct {
 	using actor: Actor,
 	mode: Ghost_Unique_Mode,
-	next_tile_index, target_tile_index: i32,
-	ticks_until_next_tile_change: int,
+	next_tile_coord, target_tile_coord: Tile_Coord,
 }
 
-GHOST_SCATTER_TARGET_TILE_INDEX := [Ghost_Type]i32 {
-	.Blinky = COLS-3,
-	.Pinky = 2,
-	.Inky = (COLS*ROWS)-1,
-	.Clyde = COLS*(ROWS-1),
+GHOST_SCATTER_TARGET_TILE_COORD := [Ghost_Type]Tile_Coord {
+	.Blinky = {COLS-3, 0},
+	.Pinky = {2, 0},
+	.Inky = {COLS-1, ROWS-1},
+	.Clyde = {0, ROWS-1},
 }
 
 PASSABLE_TILES :: bit_set[Tile_Type] {

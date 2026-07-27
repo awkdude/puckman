@@ -7,7 +7,7 @@ import "core:fmt"
 import "core:log"
 
 Editor_State :: struct {
-	tile_placement_grid_coord: vec2,
+	tile_placement_tile_coord: Tile_Coord,
 	selected_tile: Tile_Type,
 	selected_marker_tile: Marker_Tile_Type,
 	edit_ring_buffer: [1024]Tile_Edit,
@@ -18,12 +18,12 @@ Editor_State :: struct {
 }
 
 Tile_Edit :: struct {
-	tile_index: i32,
+	tile_coord: Tile_Coord,
 	old, current: Tile_Type,
 }
 
-MAZE_LOWER_BOUND :: 3*COLS
-MAZE_UPPER_BOUND :: ((ROWS-2)*COLS)-1
+MAZE_LOWER_BOUND_Y :: 3
+MAZE_UPPER_BOUND_Y :: ROWS-2
 
 editor_init :: proc() {
 
@@ -31,7 +31,7 @@ editor_init :: proc() {
 
 update_editor :: proc() {
 	bottom_margin_y := (ROWS-2)*CELL_SIZE
-	pos := get_position_from_grid_coord(game.editor.tile_placement_grid_coord)
+	pos := get_position_from_tile_coord(game.editor.tile_placement_tile_coord)
 	rg_fill_rect(
 		Rect{0, bottom_margin_y, INTERN_FRAMEBUFFER_DIMS.x, PLAYER_SIZE},
 		color_grey_4b
@@ -45,8 +45,8 @@ update_editor :: proc() {
 		}
 		tile_sprite := TILE_SPRITES[cast(Tile_Type)game.editor.selected_tile]
 		rg_texture(game.tile_spritesheet)
-		rg_blit(get_position_from_grid_coord({7, ROWS-2}), tile_sprite.rect, tile_sprite.flip, PLAYER_DIMS)
-		draw_text("TILE: ", get_position_from_tile_index(COLS*(ROWS-1)))
+		rg_blit(get_position_from_tile_coord({7, ROWS-2}), tile_sprite.rect, tile_sprite.flip, PLAYER_DIMS)
+		draw_text("TILE: ", get_position_from_tile_coord({0, ROWS-1}))
 		rg_fill_rect(Rect{pos.x, pos.y, CELL_SIZE, CELL_SIZE}, color_purple_4b)
 	} else if game.editor.mode == .Marker {
 		select_int := cast(int)game.editor.selected_marker_tile
@@ -59,31 +59,31 @@ update_editor :: proc() {
 		case .None:
 		case .Player_Start:
 			rg_texture(game.player_spritesheet)
-			rg_blit(get_position_from_grid_coord({7, ROWS-2}), Rect{0, 0, PLAYER_SIZE, PLAYER_SIZE})
+			rg_blit(get_position_from_tile_coord({7, ROWS-2}), Rect{0, 0, PLAYER_SIZE, PLAYER_SIZE})
 		case .Blinky_Start:
 			rg_texture(game.ghost_spritesheet)
 			rg_palette(1, GHOST_COLORS[.Blinky])
-			rg_blit(get_position_from_grid_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
+			rg_blit(get_position_from_tile_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
 		case .Pinky_Start:
 			rg_texture(game.ghost_spritesheet)
 			rg_palette(1, GHOST_COLORS[.Pinky])
-			rg_blit(get_position_from_grid_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
+			rg_blit(get_position_from_tile_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
 		case .Inky_Start:
 			rg_texture(game.ghost_spritesheet)
 			rg_palette(1, GHOST_COLORS[.Inky])
-			rg_blit(get_position_from_grid_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
+			rg_blit(get_position_from_tile_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
 		case .Clyde_Start:
 			rg_texture(game.ghost_spritesheet)
 			rg_palette(1, GHOST_COLORS[.Clyde])
-			rg_blit(get_position_from_grid_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
+			rg_blit(get_position_from_tile_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
 		case .Ghost_Decision:
-			p := get_position_from_grid_coord({7, ROWS-2})
+			p := get_position_from_tile_coord({7, ROWS-2})
 			rg_fill_rect(Rect{p.x, p.y, PLAYER_SIZE, PLAYER_SIZE}, color_green_4b)
 		case .Slow_Zone:
-			p := get_position_from_grid_coord({7, ROWS-2})
+			p := get_position_from_tile_coord({7, ROWS-2})
 			rg_fill_rect(Rect{p.x, p.y, PLAYER_SIZE, PLAYER_SIZE}, color_tortilla_4b)
 		case .No_Up_Zone:
-			p := get_position_from_grid_coord({7, ROWS-2})
+			p := get_position_from_tile_coord({7, ROWS-2})
 			rg_fill_rect(Rect{p.x, p.y, PLAYER_SIZE, PLAYER_SIZE}, color_lemon_4b)
 		}
 		draw_text("MARKER: ", get_position_from_tile_index(COLS*(ROWS-1)))
@@ -123,8 +123,7 @@ update_editor :: proc() {
 place_marker_tile :: proc() {
 	if !game.editor.unlocked do return
 	DUPABLE_MARKERS := bit_set[Marker_Tile_Type]{.None, .Ghost_Decision, .Slow_Zone, .No_Up_Zone}
-	tile_placement_tile_index := get_tile_index_from_tile_coord(game.editor.tile_placement_grid_coord)
-	if tile_placement_tile_index < MAZE_LOWER_BOUND || tile_placement_tile_index > MAZE_UPPER_BOUND do return
+	if game.editor.tile_placement_tile_coord.y < MAZE_LOWER_BOUND_Y || game.editor.tile_placement_tile_coord.y > MAZE_UPPER_BOUND_Y do return
 	// Clear any occurance of this marker type before setting to tile pos if non-duplicatable
 	if game.editor.selected_marker_tile not_in DUPABLE_MARKERS {
 		for &tile in game.marker_map {
@@ -133,19 +132,20 @@ place_marker_tile :: proc() {
 			}
 		}
 	}
+	tile_placement_tile_index := get_tile_index_from_tile_coord(game.editor.tile_placement_tile_coord)
 	game.marker_map[tile_placement_tile_index] = game.editor.selected_marker_tile
 }
 
 @(private="file")
 place_tile :: proc() {
 	if !game.editor.unlocked do return
-	tile_placement_tile_index := get_tile_index_from_tile_coord(game.editor.tile_placement_grid_coord)
-	if tile_placement_tile_index < MAZE_LOWER_BOUND || tile_placement_tile_index > MAZE_UPPER_BOUND do return
+	if game.editor.tile_placement_tile_coord.y < MAZE_LOWER_BOUND_Y || game.editor.tile_placement_tile_coord.y > MAZE_UPPER_BOUND_Y do return
+	tile_placement_tile_index := get_tile_index_from_tile_coord(game.editor.tile_placement_tile_coord)
 	old_tile := game.full_tile_map[tile_placement_tile_index]
 	game.full_tile_map[tile_placement_tile_index] = cast(Tile_Type)game.editor.selected_tile
 	if game.editor.selected_tile != old_tile {
 		tile_edit := Tile_Edit {
-			tile_index=tile_placement_tile_index,
+			tile_coord=game.editor.tile_placement_tile_coord,
 			old=old_tile,
 			current=cast(Tile_Type)game.editor.selected_tile,
 		}
@@ -163,16 +163,17 @@ undo_tile_edit :: proc() {
 	if game.editor.edit_head == game.editor.edit_tail do return
 	game.editor.edit_tail = util.wrap(game.editor.edit_tail - 1, len(game.editor.edit_ring_buffer))
 	tile_edit := game.editor.edit_ring_buffer[game.editor.edit_tail]
-	game.full_tile_map[tile_edit.tile_index] = tile_edit.old
+	tile_index := get_tile_index_from_tile_coord(tile_edit.tile_coord)
+	game.full_tile_map[tile_index] = tile_edit.old
 }
 
 editor_handle_event :: proc(window_event: util.Window_Event) {
 	#partial switch window_event.type {
 	case .Mouse_Move:
 		mouse_pos := (vec2)(cast(vec2f)INTERN_FRAMEBUFFER_DIMS * (cast(vec2f)window_event.vec2 / cast(vec2f)game.window_size))
-		mouse_tile_index := get_tile_index_from_position(mouse_pos)
-		mouse_tile_pos := get_position_from_tile_index(mouse_tile_index)
-		game.editor.tile_placement_grid_coord = mouse_pos / {CELL_SIZE, CELL_SIZE}
+		// mouse_tile_index := get_tile_index_from_position(mouse_pos)
+		// mouse_tile_pos := get_position_from_tile_index(mouse_tile_index)
+		game.editor.tile_placement_tile_coord = get_tile_coord_from_position(mouse_pos)
 	case .Mouse_Button:
 	case .Key:
 		if !window_event.key.pressed || window_event.key.repeated do return
@@ -236,7 +237,11 @@ load_tile_map :: proc() {
     for ; tile_i < num_tiles; data_i += 1 {
         if level_data[data_i] == '\n' || level_data[data_i] == '\r' do continue
         index := strings.index_rune(CHAR_TILE_MAP, cast(rune)level_data[data_i])
-        log.assertf(index != -1 && index < len(Tile_Type), "Unknown tile char: %c", level_data[data_i])
+        log.assertf(
+        	index != -1 && index < len(Tile_Type),
+         	"Unknown tile char: %c",
+          	level_data[data_i]
+        )
         tile := cast(Tile_Type)index
         game.full_tile_map[tile_i] = tile
         tile_i += 1
@@ -246,7 +251,11 @@ load_tile_map :: proc() {
     for ; tile_i < num_tiles; data_i += 1 {
         if level_data[data_i] == '\n' || level_data[data_i] == '\r' do continue
         index := strings.index_rune(CHAR_MARKER_MAP, cast(rune)level_data[data_i])
-        log.assertf(index != -1 && index < len(Marker_Tile_Type), "Unknown tile char: %c", level_data[data_i])
+        log.assertf(
+        	index != -1 && index < len(Marker_Tile_Type),
+         	"Unknown tile char: %c",
+          	level_data[data_i]
+        )
         marker_tile := cast(Marker_Tile_Type)index
         game.marker_map[tile_i] = marker_tile
         tile_i += 1

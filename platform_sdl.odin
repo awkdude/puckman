@@ -18,6 +18,7 @@ when PLATFORM_BACKEND == "sdl" {
 	USE_OPENGL :: false
 	global_context: runtime.Context
 	frame_tick: time.Tick
+    audio_buffer: []u8
 
 	sdl_window: ^sdl.Window
 	sdl_gamepad: ^sdl.Gamepad
@@ -35,6 +36,7 @@ when PLATFORM_BACKEND == "sdl" {
         context.logger = log.create_console_logger()
 	    context.logger.options -= {.Date}
         global_context = context
+        audio_buffer = make([]u8, 44100*4*2*2)
 	    if !sdl.Init({.VIDEO, .AUDIO, .EVENTS, .GAMEPAD}) {
 	        log.panic("Could not init SDL")
 	    }
@@ -80,35 +82,70 @@ when PLATFORM_BACKEND == "sdl" {
                 }
             }
         }
-        when false {
+        when true {
             desired_audio_spec := sdl.AudioSpec {
                 freq=44100,
                 format=.S16LE,
                 channels=2,
             }
+            phase: f32 = 0
             audio_spec: sdl.AudioSpec
             audio_stream := sdl.OpenAudioDeviceStream(
                 sdl.AUDIO_DEVICE_DEFAULT_PLAYBACK,
                 &desired_audio_spec,
-                nil,
-                nil
+                proc "c" (
+                    userdata: rawptr,
+                    stream: ^sdl.AudioStream,
+                    additional_amount, total_amount: i32) 
+                {
+                    amount := total_amount
+                    context = global_context
+                    for buffer_index := 0; buffer_index < cast(int)amount; buffer_index += 4 {
+                        phase := cast(^f32)userdata
+                        phase^ += math.TAU * (700.0 / 44100.0)
+                        sample := (i16)(math.sin(phase^) * cast(f32)bits.I16_MAX * 0.05)
+                        audio_buffer[buffer_index+0] = cast(u8)sample
+                        audio_buffer[buffer_index+1] = cast(u8)(sample >> 8)
+                        audio_buffer[buffer_index+2] = cast(u8)sample
+                        audio_buffer[buffer_index+3] = cast(u8)(sample >> 8)
+                    }
+                    sdl.PutAudioStreamData(
+                        stream,
+                        raw_data(audio_buffer),
+                        amount
+                    )
+                    log.debugf("PUSED %v bytes", total_amount)
+                },
+                &phase
             )
             sdl.GetAudioStreamFormat(audio_stream, nil, &audio_spec)
             log.debug(audio_spec)
-            wav_audio_buf, is_wav_loaded := file_load.load_wav(
-                "resources/StartupPowerMac.wav",
-                target_spec=util.Audio_Spec{
-                    num_channels=audio_spec.channels,
-                    sample_rate=audio_spec.freq,
-                    bit_format=audio_format_from_sdl(audio_spec.format), // TODO: Make bit format conv proc
-                }
-            )
-            assert(is_wav_loaded)
+            // wav_audio_buf, is_wav_loaded := file_load.load_wav(
+            //     "resources/StartupPowerMac.wav",
+            //     target_spec=util.Audio_Spec{
+            //         num_channels=audio_spec.channels,
+            //         sample_rate=audio_spec.freq,
+            //         bit_format=audio_format_from_sdl(audio_spec.format), // TODO: Make bit format conv proc
+            //     }
+            // )
+            for buffer_index := 0; buffer_index < len(audio_buffer); {
+                // phase += 2 * math.PI * (523.0 / cast(f32)audio_spec.freq)
+                // sample := math.sin(phase) * 0.5
+                // (cast(^f32le)(&audio_buffer[buffer_index+0]))^ = cast(f32le)sample
+                // (cast(^f32le)(&audio_buffer[buffer_index+4]))^ = cast(f32le)sample
+                phase += 2 * math.PI * (523.0 / 44100.0)
+                sample := (i16)(math.sin(phase) * cast(f32)bits.I16_MAX * 0.05)
+                audio_buffer[buffer_index+0] = cast(u8)sample
+                audio_buffer[buffer_index+1] = cast(u8)(sample >> 8)
+                audio_buffer[buffer_index+2] = cast(u8)sample
+                audio_buffer[buffer_index+3] = cast(u8)(sample >> 8)
+                buffer_index += 4
+            } 
             sdl.ResumeAudioStreamDevice(audio_stream)
             sdl.PutAudioStreamData(
                 audio_stream,
-                raw_data(wav_audio_buf.data),
-                cast(i32)len(wav_audio_buf.data)
+                raw_data(audio_buffer),
+                cast(i32)len(audio_buffer)
             )
             if false do os.exit(0)
         }

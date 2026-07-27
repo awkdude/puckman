@@ -4,15 +4,28 @@ import "odinlib:util"
 
 update_player :: proc() {
 	// TODO:
-	SPEED :: 1.5
-	game.player.tile_index = get_tile_index_from_position(cast(vec2)game.player.position)
-    tile_pos := get_position_from_tile_index(game.player.tile_index)
+	SPEED :: 0.75
+	game.player.tile_coord = get_tile_coord_from_position(cast(vec2)game.player.position)
+	player_tile, tile_ok := get_adjacent_tile(game.player.tile_coord, .None)
+    if tile_ok {
+        if player_tile^ == .Dot {
+            player_tile^ = .None
+            game.player.score += 10
+            game.dots_remaining -= 1
+        } else if player_tile^ == .Pellet {
+            frighten_all(.Frightened)
+            player_tile^ = .None
+            game.player.score += 50
+        }
+    }
+    check_warp_actor_oob(&game.player)
+    tile_pos := get_position_from_tile_coord(game.player.tile_coord)
     current_tile_center := tile_pos + (CELL_SIZE/2)
-    next_tile, ok := get_adjacent_tile_type(game.player.tile_index, game.player.direction)
-    next_target_tile, target_ok := get_adjacent_tile_type(game.player.tile_index, game.player_target_direction)
-    assert(!(game.player_target_direction == .Down && !target_ok))
-    if game.player_target_direction != nil {
-        if next_target_tile in PASSABLE_TILES {
+    next_tile, next_ok := get_adjacent_tile(game.player.tile_coord, game.player.direction)
+    next_target_tile, target_ok := get_adjacent_tile(game.player.tile_coord, game.player_target_direction)
+    // assert(!(game.player_target_direction == .Down && !target_ok))
+    if game.player_target_direction != nil && target_ok {
+        if next_target_tile^ in PASSABLE_TILES {
             game.player.direction = game.player_target_direction
             #partial switch game.player.direction {
             case .Up, .Down:
@@ -25,7 +38,7 @@ update_player :: proc() {
         }
     }
     game.player.position += SPEED * DIRECTION_VECTORS[game.player.direction]
-    if next_tile not_in PASSABLE_TILES {
+    if next_ok && next_tile^ not_in PASSABLE_TILES {
         #partial switch game.player.direction {
         case .Left:
             game.player.position.x = max(cast(f32)current_tile_center.x, game.player.position.x)
@@ -60,15 +73,6 @@ update_player :: proc() {
     // } else if game.player.position.y > max_y {
     //     game.player.position.y = 0
     // }
-    // Eat dot
-    if game.tile_map[game.player.tile_index] == .Dot {
-        game.tile_map[game.player.tile_index] = .None
-        game.player.score += 10
-    } else if game.tile_map[game.player.tile_index] == .Pellet {
-        frighten_all(.Frightened)
-        game.tile_map[game.player.tile_index] = .None
-        game.player.score += 50
-    }
 }
 
 draw_player :: proc() {
@@ -80,12 +84,10 @@ draw_player :: proc() {
     }
 	if game.debug_mode == .Grid {
         player_color := Color4b{0xff, 0xff, 0, 0xff}
-  		col := (i32)(cast(f32)game.player.position.x / cast(f32)CELL_SIZE)
-  		row := (i32)(cast(f32)game.player.position.y / cast(f32)CELL_SIZE)
     	rg_fill_rect(
      		Rect{
-	     		x=col*CELL_SIZE,
-		       	y=row*CELL_SIZE,
+	     		x=game.player.tile_coord.x*CELL_SIZE,
+		       	y=game.player.tile_coord.y*CELL_SIZE,
 	        	w=CELL_SIZE,
 	        	h=CELL_SIZE,
        		},
