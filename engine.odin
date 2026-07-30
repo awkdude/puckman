@@ -28,7 +28,7 @@ color_black_4b :: Color4b {0x00, 0x00, 0x00, 0xff}
 color_purple_4b :: Color4b {0xb0, 0x00, 0xff, 0xff}
 color_brown_4b :: Color4b{0x8f, 0x51, 0x29, 0xff}
 color_tortilla_4b :: Color4b{0x99, 0x79, 0x50, 0xff}
-olor_lemon_4b :: Color4b {0xef, 0xfd, 0x5f, 0xff}
+color_lemon_4b :: Color4b {0xef, 0xfd, 0x5f, 0xff}
 
 PLATFORM_BACKEND :: #config(BACKEND, "native")
 
@@ -96,7 +96,7 @@ Engine_Context :: struct {
     ghost_global_mode: Ghost_Global_Mode,
     ghosts: [Ghost_Type]Ghost_Actor,
     eaten_ghost: Maybe(Ghost_Type),
-    ghost_pass_tile_coord: Tile_Coord,
+    ghost_pass_tile_coord, ghost_revive_tile_coord: Tile_Coord,
     render_group: Render_Group,
     last_frame_tick: time.Tick,
     sim_ticks, frame_counter: int,
@@ -107,7 +107,7 @@ Engine_Context :: struct {
     window_size: vec2,
     window_size_index: int,
     palette: Palette,
-    frightened_sim_tick: int,
+    frightened_end_tick: int,
     paused: bool,
     ghost_eat_count: i32,
     max_num_dots, dots_remaining: i32,
@@ -136,7 +136,9 @@ Module_Handle_Event_Proc :: #type proc(event: util.Window_Event)
 Module_Shutdown_Proc     :: #type proc()
 
 game: ^Engine_Context
-SIM_UPDATE_INTERVAL :: 16666 * time.Microsecond
+// Game "world" updates 60 times per second
+SIM_UPDATE_HZ :: 60
+SIM_UPDATE_INTERVAL :: (time.Duration)(cast(f32)time.Second/cast(f32)SIM_UPDATE_HZ)
 SIM_LAG_MAX :: 3 * SIM_UPDATE_INTERVAL
 
 eng_init :: proc(init_info: Engine_Init) -> bool {
@@ -245,11 +247,13 @@ update_world :: proc() {
 		update_player()
 		update_ghosts()
 	}
+    if game.sim_ticks == game.frightened_end_tick {
+        unfrighten_all()
+    }
     calculate_ghost_targets()
     anim_update(&game.ghost_anim, game.last_frame_tick)
     for ghost_index in Ghost_Type {
     	ghost_actor := &game.ghosts[ghost_index]
-        // ghost_tile_index := get_tile_index_from_position(cast(vec2)ghost_actor.position)
         // Check player collision with ghosts
         if ghost_actor.tile_coord == game.player.tile_coord {
             if ghost_actor.mode == .Frightened {
@@ -261,8 +265,9 @@ update_world :: proc() {
                 }
                 game.eaten_ghost = ghost_index
                 // TODO: set hesitate time
-            } else {
+            } else if ghost_actor.mode != .Eaten {
                 // TODO: kill pacman
+                reset_level()
             }
         }
     }
@@ -425,7 +430,7 @@ eng_handle_event :: proc(window_event: util.Window_Event) {
             case util.KEY_F4, util.KEY_F5:
                 game.running = false
             case util.KEY_P:
-           		frighten_all(.Frightened)
+           		frighten_all()
             case util.KEY_M:
 	            if game.ghost_global_mode == .Scatter {
 	            	game.ghost_global_mode = .Chase

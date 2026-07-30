@@ -4,7 +4,7 @@ import "odinlib:util"
 
 update_player :: proc() {
 	// TODO:
-	SPEED :: 0.75
+	SPEED :: 0.6
 	game.player.tile_coord = get_tile_coord_from_position(cast(vec2)game.player.position)
 	player_tile, tile_ok := get_adjacent_tile(game.player.tile_coord, .None)
     if tile_ok {
@@ -13,7 +13,7 @@ update_player :: proc() {
             game.player.score += 10
             game.dots_remaining -= 1
         } else if player_tile^ == .Pellet {
-            frighten_all(.Frightened)
+            frighten_all()
             player_tile^ = .None
             game.player.score += 50
         }

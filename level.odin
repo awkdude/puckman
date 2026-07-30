@@ -27,6 +27,7 @@ reset_level :: proc() {
 		}
 		if game.ghost_pass_tile_coord == 0 && game.tile_map[i] == .Ghost_Pass {
 			game.ghost_pass_tile_coord = get_tile_coord_from_tile_index(i)
+            game.ghost_revive_tile_coord = game.ghost_pass_tile_coord + {0, 2}
 		}
         if game.tile_map[i] == .Dot {
             game.max_num_dots += 1

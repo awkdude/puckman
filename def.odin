@@ -119,7 +119,11 @@ Ghost_Actor :: struct {
 	using actor: Actor,
 	mode: Ghost_Unique_Mode,
 	next_tile_coord, target_tile_coord: Tile_Coord,
+    // Set when ghost still in ghost house after being eaten
+    reviving: bool,
 }
+
+GHOST_FRIGHTENED_TICK_DIFF :: 2*SIM_UPDATE_HZ
 
 GHOST_SCATTER_TARGET_TILE_COORD := [Ghost_Type]Tile_Coord {
 	.Blinky = {COLS-3, 0},
@@ -131,9 +135,8 @@ GHOST_SCATTER_TARGET_TILE_COORD := [Ghost_Type]Tile_Coord {
 PASSABLE_TILES :: bit_set[Tile_Type] {
 	.Dot,
 	.Pellet,
-	// .Ghost_Pass, // TODO: remove this
 	.None,
-	// .Unused,
+	.Unused,
 }
 
 GHOST_PASSABLE_TILES :: bit_set[Tile_Type] {
@@ -152,6 +155,8 @@ DIRECTION_VECTORS := [Direction]vec2f {
     .Right = {1, 0},
 }
 
+GHOST_FRIGHTENED_SPEED :: 0.3
+GHOST_EATEN_SPEED :: 1.7
 
 GHOST_SPRITES := [Direction][2]Tile_Sprite {
 	.None={},

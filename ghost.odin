@@ -15,14 +15,24 @@ slight_offset := [Ghost_Type]vec2 {
 }
 
 // Make all ghosts frightened
-frighten_all :: proc(state: Ghost_Unique_Mode) {
+frighten_all :: proc() {
 	for &ghost in game.ghosts {
 		if ghost.mode == .None {
 			ghost.mode = .Frightened
             ghost.direction = OPPOSITE_DIRECTION[ghost.direction]
 		}
 	}
-	game.frightened_sim_tick = 30*6
+	game.frightened_end_tick = game.sim_ticks + 6*SIM_UPDATE_HZ
+	game.ghost_eat_count = 0
+}
+
+// Make all ghosts unfrightened
+unfrighten_all :: proc() {
+	for &ghost in game.ghosts {
+		if ghost.mode == .Frightened {
+			ghost.mode = .None
+		}
+	}
 	game.ghost_eat_count = 0
 }
 
@@ -31,9 +41,27 @@ update_ghosts :: proc() {
 	for ghost_index in Ghost_Type {
         ghost_actor := &game.ghosts[ghost_index]
         check_warp_actor_oob(ghost_actor)
+        passable_tiles := get_ghost_passable_tiles(ghost_actor)
         current_tile_coord := get_tile_coord_from_position(cast(vec2)ghost_actor.position)
+        if ghost_actor.mode == .Eaten {
+            if current_tile_coord == game.ghost_revive_tile_coord {
+                ghost_actor.mode = .None
+                ghost_actor.reviving = true
+                ghost_actor.target_tile_coord = game.ghost_pass_tile_coord + {0, -1}
+            }
+        } else if ghost_actor.reviving {
+            if current_tile_coord == ghost_actor.target_tile_coord {
+                ghost_actor.reviving = false
+            }
+        }
         next_tile, next_ok := get_adjacent_tile(ghost_actor.tile_coord, ghost_actor.direction)
-        ghost_speed: f32 = GHOST_SPEED if ghost_actor.mode != .Eaten else GHOST_SPEED*3.0
+        ghost_tile_index := get_tile_index_from_tile_coord(ghost_actor.tile_coord)
+        ghost_speed: f32 = GHOST_SPEED 
+        if ghost_actor.mode == .Eaten {
+            ghost_speed = GHOST_EATEN_SPEED
+        } else if ghost_actor.mode == .Frightened || game.marker_map[ghost_tile_index] == .Slow_Zone {
+            ghost_speed = GHOST_FRIGHTENED_SPEED
+        }
         if current_tile_coord == ghost_actor.next_tile_coord {
            	tile_center_pos := get_position_from_tile_coord(ghost_actor.next_tile_coord) + CELL_DIMS/2
            	diff := ghost_actor.position - cast(vec2f)tile_center_pos
@@ -46,7 +74,7 @@ update_ghosts :: proc() {
             if cond {
                 ghost_actor.next_tile_coord, _ = ghost_decide_next_move(ghost_actor, ghost_index)
             }
-        } else if next_ok && next_tile^ not_in PASSABLE_TILES {
+        } else if next_ok && next_tile^ not_in passable_tiles {
             ghost_actor.next_tile_coord, _ = ghost_decide_next_move(ghost_actor, ghost_index)
         }
         ghost_actor.tile_coord = current_tile_coord
@@ -55,11 +83,7 @@ update_ghosts :: proc() {
         tile_pos := get_position_from_tile_coord(ghost_actor.tile_coord)
         current_tile_center := tile_pos + CELL_DIMS/2
         ghost_actor.position += ghost_speed * DIRECTION_VECTORS[ghost_actor.direction]
-        passable_tiles := PASSABLE_TILES
-        if ghost_actor.mode == .Eaten {
-            passable_tiles = GHOST_PASSABLE_TILES
-        }
-        if next_ok && next_tile^ not_in PASSABLE_TILES {
+        if next_ok && next_tile^ not_in passable_tiles {
             #partial switch ghost_actor.direction {
             case .Left:
                 ghost_actor.position.x = max(cast(f32)current_tile_center.x, ghost_actor.position.x)
@@ -91,15 +115,10 @@ ghost_decide_next_move :: proc(ghost: ^Ghost_Actor, ghost_index: Ghost_Type) -> 
         if ghost.mode == .None && game.marker_map[current_tile_index] == .No_Up_Zone && direction == .Up {
             continue
         }
-        passable_tiles := PASSABLE_TILES
-        if ghost.mode == .Eaten {
-            passable_tiles = GHOST_PASSABLE_TILES
-        }
+        passable_tiles := get_ghost_passable_tiles(ghost) 
 		if game.tile_map[adj_tile_index] not_in passable_tiles do continue
 		dist_vec := ghost.target_tile_coord - adj_tile_coord
 		dist := (dist_vec.x * dist_vec.x) + (dist_vec.y * dist_vec.y)
-		// Apparently, it uses the manhattan distance formula
-		// dist := math.abs(dist_vec.x) + math.abs(dist_vec.y)
 		if dist < min_dist {
 			min_dir = direction
 			min_dist = dist
@@ -161,8 +180,10 @@ calculate_ghost_targets :: proc() {
 
     for ghost_index in Ghost_Type {
         ghost_actor := &game.ghosts[ghost_index]
+        // Don't update target tile if reviving
+        if ghost_actor.reviving do break
         if ghost_actor.mode == .Eaten {
-            ghost_actor.target_tile_coord = game.ghost_pass_tile_coord
+            ghost_actor.target_tile_coord = game.ghost_revive_tile_coord
         } else if game.ghost_global_mode == .Scatter || ghost_actor.mode == .Frightened {
 			ghost_actor.target_tile_coord = GHOST_SCATTER_TARGET_TILE_COORD[ghost_index]
         } else if game.ghost_global_mode == .Chase {
@@ -193,7 +214,7 @@ calculate_ghost_targets :: proc() {
 
 draw_ghosts :: proc() {
 	rg_texture(game.ghost_spritesheet)
-	flash_state := util.time_sin(freq=2.0) >= 0.5
+    flash_state := util.blink_state(game.sim_ticks, SIM_UPDATE_HZ/2) == 1 
     if game.debug_mode != .Grid {
         for ghost_index in Ghost_Type {
 	        sprite_data: Tile_Sprite
@@ -217,14 +238,15 @@ draw_ghosts :: proc() {
                     rg_blit(draw_pos, Rect{10*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
                 }
             case .Frightened:
-         		// TODO: only flash when frightened time is reaches near limit
-         		if flash_state {
-		       		rg_palette(1, GHOST_FRIGHTENED_COLOR)
-					rg_palette(2, {238, 186, 161, 255})
-           		} else {
+         		// Only flash when frightened time is reaches near limit
+                frightened_diff := game.frightened_end_tick - game.sim_ticks
+                if frightened_diff <= GHOST_FRIGHTENED_TICK_DIFF && flash_state {
 		            rg_palette(1, color_white_4b)
 					rg_palette(2, color_red_4b)
-             	}
+                } else {
+		       		rg_palette(1, GHOST_FRIGHTENED_COLOR)
+					rg_palette(2, {238, 186, 161, 255})
+           		}
 	        	sprite_data = Tile_Sprite{
                     rect={cast(i32)game.ghost_anim.frame_index*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE}
                 }
@@ -306,4 +328,11 @@ draw_ghosts :: proc() {
 			}
 	    }
     }
+}
+
+get_ghost_passable_tiles :: proc(ghost_actor: ^Ghost_Actor) -> bit_set[Tile_Type]{
+    if ghost_actor.mode == .Eaten || ghost_actor.reviving {
+        return GHOST_PASSABLE_TILES
+    }
+    return PASSABLE_TILES
 }
