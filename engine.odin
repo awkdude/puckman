@@ -28,7 +28,7 @@ color_black_4b :: Color4b {0x00, 0x00, 0x00, 0xff}
 color_purple_4b :: Color4b {0xb0, 0x00, 0xff, 0xff}
 color_brown_4b :: Color4b{0x8f, 0x51, 0x29, 0xff}
 color_tortilla_4b :: Color4b{0x99, 0x79, 0x50, 0xff}
-color_lemon_4b :: Color4b {0xef, 0xfd, 0x5f, 0xff}
+olor_lemon_4b :: Color4b {0xef, 0xfd, 0x5f, 0xff}
 
 PLATFORM_BACKEND :: #config(BACKEND, "native")
 
@@ -82,6 +82,7 @@ Engine_Context :: struct {
     player_target_direction: Direction,
     editor: Editor_State,
     internal_framebuffer: []ColorU32, // [512*512]u8,
+    input_file_op: enum {None, Record, Read,},
     recorded_input_file: ^os.File,
     // Row-major
     tile_map, full_tile_map: [ROWS*COLS]Tile_Type,
@@ -199,6 +200,7 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
 
     game.debug_mode = .Ghost_Target
 
+
     game.anim = Sprite_Animator {
    		end_frame=2,
     	frame_interval=50*time.Millisecond,
@@ -215,9 +217,16 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
 
     // load_module()
 
+    game.input_file_op = .Record
+    for arg in os.args {
+        if arg == "-input" {
+            game.input_file_op = .Read
+        }
+    }
     if game.module.init != nil {
         game.module.init(game)
     }
+    log.debug("GAME ENGINE SIZE:", size_of(game^))
 
     return true
 }
@@ -226,6 +235,7 @@ eng_shutdown :: proc() {
     if game.module.shutdown != nil {
         game.module.shutdown()
     }
+    os.write_string(game.recorded_input_file, "OK")
     os.close(game.recorded_input_file)
 }
 
@@ -290,20 +300,23 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
 			game.lag = SIM_UPDATE_INTERVAL
 	    }
 
-		input_char: rune
-		switch game.player_target_direction {
-		case .None:
-			input_char = '0'
-		case .Up:
-			input_char = 'U'
-		case .Down:
-			input_char = 'D'
-		case .Left:
-			input_char = 'L'
-		case .Right:
-			input_char = 'R'
-		}
-		os.write_byte(game.recorded_input_file, cast(u8)input_char)
+        if game.input_file_op == .Record {
+            input_char: rune
+            switch game.player_target_direction {
+            case .None:
+                input_char = '0'
+            case .Up:
+                input_char = 'U'
+            case .Down:
+                input_char = 'D'
+            case .Left:
+                input_char = 'L'
+            case .Right:
+                input_char = 'R'
+            }
+            os.write_byte(game.recorded_input_file, cast(u8)input_char)
+            os.flush(game.recorded_input_file)
+        }
         update_world()
         game.sim_ticks += 1
         game.lag -= SIM_UPDATE_INTERVAL
@@ -354,7 +367,9 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
 		blit_sprite(.Small, {6*CELL_SIZE, 0}, vec2{src_xoffset * CELL_SIZE, 0})
 	case .Grid:
 		draw_text("GRID", {0, 0})
-		mouse_tile_coord := get_tile_coord_from_position((vec2)(cast(vec2f)game.input_state.mouse_position * cast(vec2f)INTERN_FRAMEBUFFER_DIMS / framebuffer_dims))
+		mouse_tile_coord := get_tile_coord_from_position(
+            (vec2)(cast(vec2f)game.input_state.mouse_position * cast(vec2f)INTERN_FRAMEBUFFER_DIMS / framebuffer_dims)
+        )
 		mouse_grid_coord_text := fmt.tprintf(
 			"(%02v, %02v)",
 		 	mouse_tile_coord.x,

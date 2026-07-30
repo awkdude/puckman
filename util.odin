@@ -28,6 +28,34 @@ blit_sprite :: #force_inline proc(
     )
 }
 
+Input_RLE :: struct {
+    buffer: []u8,
+    byte_index: int,
+    run_value, run_length: u8
+}
+
+record_input :: proc(rec: ^Input_RLE, input: Direction) {
+    input := cast(u8)input
+    if input == rec.run_value && rec.run_length < 255 {
+        rec.run_length += 1
+    } else {
+        // For now, just write 2 bytes. Writing bits would be better
+        rec.buffer[rec.byte_index] = rec.run_length
+        rec.buffer[rec.byte_index+1] = rec.run_value
+        rec.byte_index += 2
+        rec.run_length = 0
+        rec.run_value = input
+    }
+}
+
+read_input_record :: proc(rec: ^Input_RLE) -> (Direction, bool) {
+    if rec.byte_index >= len(rec.buffer) {
+        return nil, false
+    }
+    // TODO:
+    return nil, false
+}
+
 draw_text :: proc(text: string, offset: vec2, scale: f32 = 1.0, loc := #caller_location) {
 	rg_texture(game.text_spritesheet)
 	rg_palette(1, color_white_4b)

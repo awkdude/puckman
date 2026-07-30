@@ -53,8 +53,12 @@ update_ghosts :: proc() {
         next_tile, next_ok = get_adjacent_tile(ghost_actor.tile_coord, ghost_actor.direction)
 
         tile_pos := get_position_from_tile_coord(ghost_actor.tile_coord)
-        current_tile_center := tile_pos + {CELL_SIZE/2, CELL_SIZE/2}
+        current_tile_center := tile_pos + CELL_DIMS/2
         ghost_actor.position += ghost_speed * DIRECTION_VECTORS[ghost_actor.direction]
+        passable_tiles := PASSABLE_TILES
+        if ghost_actor.mode == .Eaten {
+            passable_tiles = GHOST_PASSABLE_TILES
+        }
         if next_ok && next_tile^ not_in PASSABLE_TILES {
             #partial switch ghost_actor.direction {
             case .Left:
@@ -105,7 +109,7 @@ ghost_decide_next_move :: proc(ghost: ^Ghost_Actor, ghost_index: Ghost_Type) -> 
 	if min_dir != .None {
 		ghost.direction = min_dir
 		tile_pos := get_position_from_tile_coord(ghost.tile_coord)
-		current_tile_center := tile_pos + {CELL_SIZE/2, CELL_SIZE/2}
+		current_tile_center := tile_pos + CELL_DIMS/2
 		#partial switch ghost.direction {
         case .Up, .Down:
             // Position player x value to tile's center x if up or down

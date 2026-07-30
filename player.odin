@@ -18,6 +18,7 @@ update_player :: proc() {
             game.player.score += 50
         }
     }
+    player_target_direction := game.player_target_direction
     check_warp_actor_oob(&game.player)
     tile_pos := get_position_from_tile_coord(game.player.tile_coord)
     current_tile_center := tile_pos + (CELL_SIZE/2)
