@@ -9,4 +9,5 @@
 [ ] assert fail when window minimized
 [ ] Record player input
 [ ] Title screen
-
+[ ] Blit_fp clip rect doesn't work correctly when scaled
+[ ] rare occurances where ghost disappears after traveling through tunnel

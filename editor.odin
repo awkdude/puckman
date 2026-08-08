@@ -44,8 +44,18 @@ update_editor :: proc() {
 			place_tile()
 		}
 		tile_sprite := TILE_SPRITES[cast(Tile_Type)game.editor.selected_tile]
-		rg_texture(game.tile_spritesheet)
-		rg_blit(get_position_from_tile_coord({7, ROWS-2}), tile_sprite.rect, tile_sprite.flip, PLAYER_DIMS)
+		rg_texture(game.spritesheet)
+		rg_blit(
+            get_position_from_tile_coord({7, ROWS-2}),
+            Rect{
+                tile_sprite.src_offset.x,
+                tile_sprite.src_offset.y,
+                CELL_SIZE,
+                CELL_SIZE
+            },
+            tile_sprite.flip,
+            PLAYER_DIMS
+        )
 		draw_text("TILE: ", get_position_from_tile_coord({0, ROWS-1}))
 		rg_fill_rect(Rect{pos.x, pos.y, CELL_SIZE, CELL_SIZE}, color_purple_4b)
 	} else if game.editor.mode == .Marker {

@@ -45,9 +45,6 @@ INTERN_FRAMEBUFFER_WIDTH  :: CELL_SIZE * COLS
 INTERN_FRAMEBUFFER_HEIGHT :: CELL_SIZE * ROWS
 INTERN_FRAMEBUFFER_DIMS :: vec2{INTERN_FRAMEBUFFER_WIDTH, INTERN_FRAMEBUFFER_HEIGHT}
 
-PACMAN_RIGHT_FRAMES := [?]i32 {0, 2, 4}
-PACMAN_DOWN_FRAMES := [?]i32{1, 3, 4}
-
 window_sizes := [?]vec2 {
 	1 * INTERN_FRAMEBUFFER_DIMS,
 	2 * INTERN_FRAMEBUFFER_DIMS,
@@ -83,35 +80,36 @@ Engine_Context :: struct {
     editor: Editor_State,
     internal_framebuffer: []ColorU32, // [512*512]u8,
     input_file_op: enum {None, Record, Read,},
-    recorded_input_file: ^os.File,
     // Row-major
     tile_map, full_tile_map: [ROWS*COLS]Tile_Type,
     marker_map: [ROWS*COLS]Marker_Tile_Type,
     input_state: util.Input_State,
     player_spritesheet:  util.Pixmap,
     player: Player,
+    spritesheet: Pixmap,
     tile_spritesheet: Pixmap,
     text_spritesheet: Pixmap,
     ghost_spritesheet: Pixmap,
     ghost_global_mode: Ghost_Global_Mode,
+    ghost_mode_switch_end_tick: int,
     ghosts: [Ghost_Type]Ghost_Actor,
-    eaten_ghost: Maybe(Ghost_Type),
+    eaten_ghost: Ghost_Type,
     ghost_pass_tile_coord, ghost_revive_tile_coord: Tile_Coord,
     render_group: Render_Group,
     last_frame_tick: time.Tick,
     sim_ticks, frame_counter: int,
-    sim_pause_end_tick: int,
+    frightened_ticks_remaining: int,
+    sim_freeze_end_tick: int,
+    freeze_type: Freeze_Type,
     lag: time.Duration,
     rects_collide: bool,
-    anim, ghost_anim: Sprite_Animator,
+    anim, death_anim, ghost_anim: Sprite_Animator,
     window_size: vec2,
     window_size_index: int,
     palette: Palette,
-    frightened_end_tick: int,
     paused: bool,
     ghost_eat_count: i32,
     max_num_dots, dots_remaining: i32,
-
 
     module: struct {
         dynlib_ptr: dynlib.Library,
@@ -130,6 +128,16 @@ Tile_Sprite :: struct {
 	flip: [2]bool,
 }
 
+Sprite_Size :: enum {
+    Big,
+    Small,
+}
+
+Sprite :: struct {
+    src_offset: vec2,
+    flip: [2]bool,
+}
+
 Module_Init_Proc         :: #type proc(_: ^Engine_Context)
 Module_Update_Proc       :: #type proc()
 Module_Handle_Event_Proc :: #type proc(event: util.Window_Event)
@@ -139,7 +147,7 @@ game: ^Engine_Context
 // Game "world" updates 60 times per second
 SIM_UPDATE_HZ :: 60
 SIM_UPDATE_INTERVAL :: (time.Duration)(cast(f32)time.Second/cast(f32)SIM_UPDATE_HZ)
-SIM_LAG_MAX :: 3 * SIM_UPDATE_INTERVAL
+SIM_LAG_MAX :: 30 * SIM_UPDATE_INTERVAL
 
 eng_init :: proc(init_info: Engine_Init) -> bool {
     game = new(Engine_Context)
@@ -168,6 +176,9 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     	path="textures/icon.ico",
     })
 
+    rg_init()
+
+
     game.player.direction = .None
     game.player.num_lives = 3
 
@@ -175,11 +186,10 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
 
     game.internal_framebuffer = make([]ColorU32, INTERN_FRAMEBUFFER_WIDTH * INTERN_FRAMEBUFFER_HEIGHT)
 
-    input_file_err: os.Error
-    game.recorded_input_file, input_file_err = os.open("input.txt", {.Write, .Create, .Trunc})
-    assert(input_file_err == nil)
 
     load_ok: bool
+    game.spritesheet, load_ok = load_bmp_indexed("textures/spritesheet.bmp")
+    assert(load_ok)
     game.player_spritesheet, load_ok = load_bmp_indexed("textures/pacman.bmp")
     assert(load_ok)
     game.text_spritesheet, load_ok = load_bmp_indexed("textures/text.bmp")
@@ -210,6 +220,13 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
     	inc=1,
     }
 
+    game.death_anim = Sprite_Animator {
+        end_frame=len(PACMAN_DEATH_FRAMES)-1,
+        frame_interval=100*time.Millisecond,
+        repeat_mode=.None,
+        inc=1,
+    }
+
     game.ghost_anim = Sprite_Animator {
     	end_frame=1,
 	    frame_interval=100*time.Millisecond,
@@ -219,10 +236,9 @@ eng_init :: proc(init_info: Engine_Init) -> bool {
 
     // load_module()
 
-    game.input_file_op = .Record
     for arg in os.args {
         if arg == "-input" {
-            game.input_file_op = .Read
+            // TODO:
         }
     }
     if game.module.init != nil {
@@ -237,18 +253,44 @@ eng_shutdown :: proc() {
     if game.module.shutdown != nil {
         game.module.shutdown()
     }
-    os.write_string(game.recorded_input_file, "OK")
-    os.close(game.recorded_input_file)
 }
 
 update_world :: proc() {
-	if game.sim_ticks >= game.sim_pause_end_tick {
-		game.eaten_ghost = nil
+	if game.sim_ticks >= game.sim_freeze_end_tick {
 		update_player()
-		update_ghosts()
 	}
-    if game.sim_ticks == game.frightened_end_tick {
+    if game.sim_ticks > game.sim_freeze_end_tick || game.freeze_type == .Eat_Ghost {
+        update_ghosts()
+    }
+    if game.frightened_ticks_remaining == 0 {
         unfrighten_all()
+    }
+    // TODO: put this somewhere else
+    if game.freeze_type == .Death2 {
+        anim_update(&game.death_anim, game.last_frame_tick)
+    }
+    // Only decrement frightened_ticks_remaining if not frozen
+    if game.sim_ticks > game.sim_freeze_end_tick {
+        if game.frightened_ticks_remaining > -1 {
+            game.frightened_ticks_remaining -= 1
+        }
+    }
+    if false && game.sim_ticks >= game.ghost_mode_switch_end_tick {
+        if game.ghost_global_mode == .Chase {
+            game.ghost_global_mode = .Scatter
+        } else {
+            game.ghost_global_mode = .Chase
+        }
+        // TODO: Put this in update_ghosts
+        for ghost_index in Ghost_Type {
+            ghost_actor := &game.ghosts[ghost_index]
+            ghost_tile_index := get_tile_index_from_tile_coord(ghost_actor.tile_coord)
+            if ghost_actor.mode == .None && game.marker_map[ghost_tile_index] != .Slow_Zone 
+            {
+                ghost_actor.direction = OPPOSITE_DIRECTION[ghost_actor.direction]
+            }
+        }
+        game.ghost_mode_switch_end_tick = game.sim_ticks + 5*SIM_UPDATE_HZ
     }
     calculate_ghost_targets()
     anim_update(&game.ghost_anim, game.last_frame_tick)
@@ -258,20 +300,43 @@ update_world :: proc() {
         if ghost_actor.tile_coord == game.player.tile_coord {
             if ghost_actor.mode == .Frightened {
                 ghost_actor.mode = .Eaten
+                game.freeze_type = .Eat_Ghost
                 game.ghost_eat_count += 1
                 game.player.score += (i32)(1 << cast(u32)game.ghost_eat_count) * 100
                 if !game.step_mode {
-	                game.sim_pause_end_tick = game.sim_ticks + 30
+                    // Freeze for a second if player eats a ghost
+	                game.sim_freeze_end_tick = game.sim_ticks + SIM_UPDATE_HZ
                 }
                 game.eaten_ghost = ghost_index
                 // TODO: set hesitate time
             } else if ghost_actor.mode != .Eaten {
                 // TODO: kill pacman
-                reset_level()
+                game.freeze_type = .Death1
+                // reset_level()
             }
+            break
         }
     }
-
+    if game.sim_ticks >= game.sim_freeze_end_tick {
+        #partial switch game.freeze_type {
+        case .Death1:
+            game.freeze_type = .Death2
+            // TODO: reset death animation
+            game.death_anim.frame_index = game.death_anim.start_frame
+        case .Death2:
+            // TODO: check lives left
+            // If none, set to game over
+            // else reset_actors() then set to .Ready
+        case .Clear_Maze1:
+            game.freeze_type = .Clear_Maze2
+        case .Clear_Maze2:
+            // TODO: 
+        case .Game_Over:
+            // TODO: back to attract mode
+        case:
+            game.freeze_type = .None
+        }
+    }
 }
 
 eng_update_render :: proc(update_info: Engine_Update) -> bool {
@@ -319,8 +384,6 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
             case .Right:
                 input_char = 'R'
             }
-            os.write_byte(game.recorded_input_file, cast(u8)input_char)
-            os.flush(game.recorded_input_file)
         }
         update_world()
         game.sim_ticks += 1
@@ -343,7 +406,7 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
     draw_player()
     draw_ghosts()
     if game.paused && game.debug_mode != .Editor {
-    	draw_text("PAUSED!", get_position_from_tile_coord({13,13}))
+    	draw_text("paused!", get_position_from_tile_coord({13,13}))
     }
     tile_pos := get_position_from_tile_coord(game.player.tile_coord)
     #partial switch game.debug_mode {
@@ -362,7 +425,8 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
         // text = fmt.tprintf("Dir: %v", game.ghosts[.Blinky].direction)
         // draw_text(text, get_position_from_tile_coord({17, 2}))
 
-        text := fmt.tprintf("P Tile: (%02v, %02v)", game.player.tile_coord.x, game.player.tile_coord.y)
+        // text := fmt.tprintf("P Tile: (%02v, %02v)", game.player.tile_coord.x, game.player.tile_coord.y)
+        text := fmt.tprintf("MOST R: %v", game.render_group.most_queued)
         draw_text(text, get_position_from_tile_coord({0, 1}))
         text = fmt.tprintf("Dots: %03d", game.dots_remaining)
         draw_text(text, get_position_from_tile_coord({0, 2}))
@@ -387,12 +451,13 @@ eng_update_render :: proc(update_info: Engine_Update) -> bool {
 	}
     rg_to_output(fb_pixmap)
     rg_texture(fb_pixmap)
+    dst_dims := vec2{
+        game.update_info.framebuffer.w,
+        game.update_info.framebuffer.h,
+    }
     rg_blit(
      	{0, 0},
-    	dst_dims=vec2{
-        	game.update_info.framebuffer.w,
-        	game.update_info.framebuffer.h,
-     	}
+    	dst_dims=dst_dims,
     )
     if game.debug_mode == .Editor || game.debug_mode == .Grid {
    		rg_grid(
@@ -426,6 +491,7 @@ eng_handle_event :: proc(window_event: util.Window_Event) {
         if window_event.key.pressed {
             switch window_event.key.keycode{
             case util.KEY_ESCAPE:
+                log.debug("PRESSED")
             	game.paused = !game.paused
             case util.KEY_F4, util.KEY_F5:
                 game.running = false
@@ -473,8 +539,20 @@ eng_handle_event :: proc(window_event: util.Window_Event) {
 }
 
 draw_maze :: proc() {
-    rg_texture(game.tile_spritesheet)
-    rg_palette(1, color_blue_4b)
+    rg_texture(game.spritesheet)
+    tick_diff := game.sim_freeze_end_tick - game.sim_ticks 
+    if game.freeze_type == .Ready && tick_diff > READY_BLANK_TICK_DIFF_MIN {
+        return
+    }
+    maze_color := color_blue_4b
+    // Flash maze if completed
+    if game.freeze_type == .Clear_Maze2 {
+        if util.blink_state(game.sim_ticks, SIM_UPDATE_HZ) == 1 {
+            maze_color = color_white_4b
+        }
+    }
+    rg_palette(1, maze_color)
+    rg_begin_multithread()
     if game.debug_mode == .Grid {
     	for tile, i in game.tile_map {
             tile_color := color_cyan_4b if tile in PASSABLE_TILES else color_grey_4b
@@ -496,15 +574,17 @@ draw_maze :: proc() {
 	    for tile, i in desired_tile_map {
 	    	if tile != .None && tile != .Unused {
 		    	tile_sprite := TILE_SPRITES[tile]
-				if tile_sprite.rect == {} {
-					tile_sprite.rect = Rect{10*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE}
+				if tile_sprite.src_offset == {} {
+					tile_sprite.src_offset = vec2{10*CELL_SIZE, 0}
 				}
-		        rg_blit(
+		        blit_sprite(
+                    .Small,
 		         	CELL_SIZE * cast(vec2)get_tile_coord_from_tile_index(i),
-		          	tile_sprite.rect,
+		          	tile_sprite.src_offset,
 		           	tile_sprite.flip,
 		        )
 	     	}
 	    }
     }
+    rg_end_multithread()
 }

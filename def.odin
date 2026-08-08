@@ -1,5 +1,32 @@
 package main
 
+// TODO: Define big array for all sprites in game
+
+Game_Phase :: enum {
+    Ready,
+    Play,
+    Death,
+    Game_Over,
+    Complete,
+}
+
+Freeze_Type :: enum {
+    None,
+    Cold_Start_Ready,
+    Eat_Ghost,
+    Clear_Maze1,
+    // Flashes maze
+    Clear_Maze2,
+    Death1,
+    // Plays death animation
+    Death2,
+    Game_Over,
+    Ready,
+}
+
+// if (end_tick - now_ticks) > this, don't draw stuff
+READY_BLANK_TICK_DIFF_MIN :: 60
+
 Debug_Mode :: enum {
 	None,
 	Ghost_Target,
@@ -39,8 +66,7 @@ Tile_Type :: enum u8 {
     Inner_Wall_Top_Left,
     Inner_Wall_Top_Right,
     Inner_Wall_Bottom_Left,
-    Inner_Wall_Bottom_Right,
-    Double_Wall_Top,
+    Inner_Wall_Bottom_Right, Double_Wall_Top,
     Double_Wall_Bottom,
     Double_Wall_Left,
     Double_Wall_Right,
@@ -87,6 +113,11 @@ OPPOSITE_DIRECTION := [Direction]Direction {
 	.Left = .Right,
 	.Right = .Left,
 }
+
+PACMAN_RIGHT_FRAMES := [?]i32 {0, 2, 4}
+PACMAN_DOWN_FRAMES := [?]i32{1, 3, 4}
+PACMAN_DEATH_FRAMES := [?]i32{0, 5, 6, 7, 8, 9, 10, 11, 12, 13}
+
 
 Ghost_Type :: enum {
 	Blinky,
@@ -158,170 +189,170 @@ DIRECTION_VECTORS := [Direction]vec2f {
 GHOST_FRIGHTENED_SPEED :: 0.3
 GHOST_EATEN_SPEED :: 1.7
 
-GHOST_SPRITES := [Direction][2]Tile_Sprite {
+GHOST_SPRITES := [Direction][2]Sprite {
 	.None={},
 	.Left = {
-		Tile_Sprite {
-			rect={2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE},
+		Sprite {
+			src_offset={2*PLAYER_SIZE, 16},
 			flip={true, false},
 		},
-		Tile_Sprite {
-			rect={3*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE},
+		Sprite {
+			src_offset={3*PLAYER_SIZE, 16},
 			flip={true, false},
 		},
 	},
 	.Right = {
-		Tile_Sprite {
-			rect={2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE},
+		Sprite {
+			src_offset={2*PLAYER_SIZE, 16},
 			flip={false, false},
 		},
-		Tile_Sprite {
-			rect={3*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE},
+		Sprite {
+			src_offset={3*PLAYER_SIZE, 16},
 			flip={false, false},
 		},
 	},
 	.Up = {
-		Tile_Sprite {
-			rect={4*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE},
+		Sprite {
+			src_offset={4*PLAYER_SIZE, 16},
 			flip={false, false},
 		},
-		Tile_Sprite {
-			rect={5*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE},
+		Sprite {
+			src_offset={5*PLAYER_SIZE, 16},
 			flip={false, false},
 		},
 	},
 	.Down = {
-		Tile_Sprite {
-			rect={6*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE},
+		Sprite {
+			src_offset={6*PLAYER_SIZE, 16},
 			flip={false, false},
 		},
-		Tile_Sprite {
-			rect={7*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE},
+		Sprite {
+			src_offset={7*PLAYER_SIZE, 16},
 			flip={false, false},
 		},
 	},
 }
 
 
-TILE_SPRITES :=  [Tile_Type]Tile_Sprite {
+TILE_SPRITES :=  [Tile_Type]Sprite {
     .None={},
     .Unused={
-    	rect=Rect{11*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+    	src_offset={11*CELL_SIZE, 32},
     },
     .Dot={
-        rect=Rect{9*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={9*CELL_SIZE, 32},
     },
     .Pellet={
-        rect=Rect{10*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={10*CELL_SIZE, 32},
     },
     .Wall_Left={
-        rect=Rect{0*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={0*CELL_SIZE, 32},
         flip={true, false},
     },
     .Wall_Right={
-        rect=Rect{0*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={0*CELL_SIZE, 32},
     },
     .Wall_Top={
-        rect=Rect{1*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={1*CELL_SIZE, 32},
         flip={false, true},
     },
     .Wall_Bottom={
-        rect=Rect{1*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={1*CELL_SIZE, 32},
     },
     .Wall_Bottom_Right={
-        rect=Rect{2*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={2*CELL_SIZE, 32},
     },
     .Wall_Bottom_Left={
-        rect=Rect{2*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={2*CELL_SIZE, 32},
         flip={true, false},
     },
     .Wall_Top_Left={
-        rect=Rect{2*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={2*CELL_SIZE, 32},
         flip={true, true},
     },
     .Wall_Top_Right={
-        rect=Rect{2*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={2*CELL_SIZE, 32},
         flip={false, true},
     },
     .Inner_Wall_Bottom_Right={
-        rect=Rect{13*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={13*CELL_SIZE, 32},
     },
     .Inner_Wall_Bottom_Left={
-        rect=Rect{13*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={13*CELL_SIZE, 32},
         flip={true, false},
     },
     .Inner_Wall_Top_Left={
-        rect=Rect{13*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={13*CELL_SIZE, 32},
         flip={true, true},
     },
     .Inner_Wall_Top_Right={
-        rect=Rect{13*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={13*CELL_SIZE, 32},
         flip={false, true},
     },
     .Double_Wall_Bottom={
-        rect=Rect{4*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={4*CELL_SIZE, 32},
         flip={false, false},
     },
     .Double_Wall_Top={
-        rect=Rect{4*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={4*CELL_SIZE, 32},
         flip={false, true},
     },
     .Double_Wall_Left={
-        rect=Rect{5*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={5*CELL_SIZE, 32},
         flip={true, false},
     },
     .Double_Wall_Right={
-        rect=Rect{5*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={5*CELL_SIZE, 32},
         flip={false, false},
     },
     .Double_Wall_Bottom_Right={
-        rect=Rect{6*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={6*CELL_SIZE, 32},
     },
     .Double_Wall_Bottom_Left={
-        rect=Rect{6*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={6*CELL_SIZE, 32},
         flip={true, false},
     },
     .Double_Wall_Top_Left={
-        rect=Rect{6*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={6*CELL_SIZE, 32},
         flip={true, true},
     },
     .Double_Wall_Top_Right={
-        rect=Rect{6*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={6*CELL_SIZE, 32},
         flip={false, true},
     },
     .Double_Wall_Sharp_Bottom_Right={
-        rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={7*CELL_SIZE, 32},
     },
     .Double_Wall_Sharp_Bottom_Left={
-        rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={7*CELL_SIZE, 32},
         flip={true, false},
     },
     .Double_Wall_Sharp_Top_Left={
-        rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={7*CELL_SIZE, 32},
         flip={true, true},
     },
     .Double_Wall_Sharp_Top_Right={
-        rect=Rect{7*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={7*CELL_SIZE, 32},
         flip={false, true},
     },
     .Double_Inner_Wall_Top_Left={
-    	rect=Rect{8*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+    	src_offset={8*CELL_SIZE, 32},
      	flip={true, true},
     },
     .Double_Inner_Wall_Top_Right={
-    	rect=Rect{8*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+    	src_offset={8*CELL_SIZE, 32},
      	flip={false, true},
     },
     .Double_Inner_Wall_Bottom_Left={
-    	rect=Rect{8*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+    	src_offset={8*CELL_SIZE, 32},
      	flip={true, false},
     },
     .Double_Inner_Wall_Bottom_Right={
-    	rect=Rect{8*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+    	src_offset={8*CELL_SIZE, 32},
      	flip={false, false},
     },
     .Ghost_Pass={
-        rect=Rect{3*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+        src_offset={3*CELL_SIZE, 32},
         flip={false, false},
     },
 }

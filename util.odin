@@ -60,8 +60,9 @@ draw_text :: proc(text: string, offset: vec2, scale: f32 = 1.0, loc := #caller_l
 	rg_texture(game.text_spritesheet)
 	rg_palette(1, color_white_4b)
     scaled_cell_size := (i32)(scale * cast(f32)CELL_SIZE)
+    rg_begin_multithread()
 	for c, i in text {
-		rect := Rect{
+		src_rect := Rect{
 			get_text_sprite_xoffset(c),
 			0,
 			CELL_SIZE,
@@ -70,11 +71,12 @@ draw_text :: proc(text: string, offset: vec2, scale: f32 = 1.0, loc := #caller_l
 		if c != ' ' {
 			rg_blit(
 				{(cast(i32)i * scaled_cell_size) + offset.x, offset.y},
-				rect,
+				src_rect,
 				dst_dims=vec2{scaled_cell_size, scaled_cell_size},
 			)
 		}
 	}
+    rg_end_multithread()
 }
 
 get_text_sprite_xoffset :: proc(target_c: rune) -> i32 {

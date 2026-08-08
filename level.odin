@@ -37,6 +37,7 @@ reset_level :: proc() {
 	game.ghost_global_mode = .Chase
 	for ghost_index in Ghost_Type {
         ghost_actor := &game.ghosts[ghost_index]
+        ghost_actor.reviving = false
         tile_pos := get_position_from_tile_coord(ghost_actor.tile_coord)
 		current_tile_center := tile_pos + (CELL_SIZE/2)
         ghost_actor.position = cast(vec2f)current_tile_center
