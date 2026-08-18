@@ -22,7 +22,7 @@ frighten_all :: proc() {
             ghost.direction = OPPOSITE_DIRECTION[ghost.direction]
 		}
 	}
-	game.frightened_ticks_remaining = 6*SIM_UPDATE_HZ
+	game.frightened_sim_ticks_remaining = 6*SIM_UPDATE_HZ
 	game.ghost_eat_count = 0
 }
 
@@ -37,11 +37,26 @@ unfrighten_all :: proc() {
 
 update_ghosts :: proc() {
     GHOST_SPEED :: 0.57
+    anim_update(&game.ghost_anim, game.last_frame_cpu_tick)
+    do_mode_switch := false && game.sim_ticks >= game.ghost_mode_switch_end_sim_tick
+    if do_mode_switch {
+        if game.ghost_global_mode == .Chase {
+            game.ghost_global_mode = .Scatter
+        } else {
+            game.ghost_global_mode = .Chase
+        }
+        game.ghost_mode_switch_end_sim_tick = game.sim_ticks + 5*SIM_UPDATE_HZ
+    }
 	for ghost_index in Ghost_Type {
         ghost_actor := &game.ghosts[ghost_index]
         if game.freeze_type == .Eat_Ghost && (game.eaten_ghost == ghost_index || ghost_actor.mode != .Eaten) 
         {
             continue
+        }
+        ghost_tile_index := get_tile_index_from_tile_coord(ghost_actor.tile_coord)
+        if do_mode_switch && ghost_actor.mode == .None && game.marker_map[ghost_tile_index] != .Slow_Zone 
+        {
+            ghost_actor.direction = OPPOSITE_DIRECTION[ghost_actor.direction]
         }
         log.debugf("%v: %v", ghost_index, ghost_actor.position)
         check_warp_actor_oob(ghost_actor)
@@ -60,7 +75,6 @@ update_ghosts :: proc() {
             }
         }
         next_tile, next_ok := get_adjacent_tile(ghost_actor.tile_coord, ghost_actor.direction)
-        ghost_tile_index := get_tile_index_from_tile_coord(ghost_actor.tile_coord)
         ghost_speed: f32 = GHOST_SPEED 
         if ghost_actor.mode == .Eaten {
             ghost_speed = GHOST_EATEN_SPEED
@@ -218,37 +232,52 @@ calculate_ghost_targets :: proc() {
 }
 
 draw_ghosts :: proc() {
-	rg_texture(game.spritesheet)
     flash_state := util.blink_state(game.sim_ticks, SIM_UPDATE_HZ/2) == 1 
     if game.debug_mode != .Grid {
+        valid_freeze_types := bit_set[Freeze_Type]{
+            .None,
+            .Eat_Ghost,
+            .Clear_Maze1,
+            .Death1,
+            // TODO: .Ready
+        }
+        if game.freeze_type not_in valid_freeze_types do return
         for ghost_index in Ghost_Type {
 	        sprite_data: Sprite
             ghost_actor := &game.ghosts[ghost_index]
             draw_pos := cast(vec2)ghost_actor.position - PLAYER_DIMS/2
             switch game.ghosts[ghost_index].mode {
             case .Eaten:
+                src_offset: vec2
                 if game.freeze_type == .Eat_Ghost && game.eaten_ghost == ghost_index {
-                    xoffset := (11 + (game.ghost_eat_count - 1)) * PLAYER_SIZE
-                    rg_palette(1, GHOST_COLORS[ghost_index])
-                    rg_blit(draw_pos, Rect{xoffset, 0, PLAYER_SIZE, PLAYER_SIZE})
-                } else {
-                    if ghost_actor.direction == .Left || ghost_actor.direction == .Right 
-                    {
-                        rg_blit(
-                            draw_pos,
-                            Rect{8*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE},
-                            {ghost_actor.direction == .Left, false}
-                        )
-                    } else if ghost_actor.direction == .Up {
-                        rg_blit(draw_pos, Rect{9*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
-
-                    } else if ghost_actor.direction == .Down {
-                        rg_blit(draw_pos, Rect{10*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
+                    switch game.ghost_eat_count {
+                    case 1:
+                        src_offset = {176, 16}
+                    case 2:
+                        src_offset = {192, 16}
+                    case 3:
+                        src_offset = {208, 16}
+                    case 4:
+                        src_offset = {224, 16}
                     }
+                    rg_palette(1, GHOST_COLORS[ghost_index])
+                    blit_sprite(.Big, draw_pos, src_offset)
+                } else {
+                    flip: [2]bool
+                    #partial switch ghost_actor.direction {
+                    case .Left, .Right:
+                        src_offset = {8*PLAYER_SIZE, 16}
+                        flip = {ghost_actor.direction == .Left, false}
+                    case .Up: 
+                        src_offset = {9*PLAYER_SIZE, 16}
+                    case .Down :
+                        src_offset = {10*PLAYER_SIZE, 16}
+                    }
+                    blit_sprite(.Big, draw_pos, src_offset, flip)
                 }
             case .Frightened:
          		// Only flash when frightened time is reaches near limit
-                if game.frightened_ticks_remaining <= GHOST_FRIGHTENED_TICK_DIFF && flash_state 
+                if game.frightened_sim_ticks_remaining <= GHOST_FRIGHTENED_TICK_DIFF && flash_state 
                 {
 		            rg_palette(1, color_white_4b)
 					rg_palette(2, color_red_4b)
@@ -294,29 +323,28 @@ draw_ghosts :: proc() {
     }
     // Draw ghost's targets
     if game.debug_mode == .Ghost_Target {
-	    rg_texture(game.tile_spritesheet)
 		fake_ghosts := game.ghosts
 	    for ghost_index in Ghost_Type {
             fake_ghost := &fake_ghosts[ghost_index]
 			previous_tile_coords: [dynamic; 64]Tile_Coord
 		   	rg_palette(1, GHOST_COLORS[ghost_index])
-		    target_tile_pos := get_position_from_tile_coord(game.ghosts[ghost_index].target_tile_coord)
-		    rg_blit(
-				target_tile_pos + slight_offset[ghost_index],
-			 	Rect{14*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE}
-			)
-			// FIXME: Draw path
-			count := 0
-			for ; ; count += 1 {
-				if fake_ghost.tile_coord == fake_ghost.target_tile_coord {
-					break
-				}
-
+		    target_tile_pos := get_position_from_tile_coord(
+                game.ghosts[ghost_index].target_tile_coord
+            )
+            blit_sprite(
+                .Small, 
+                target_tile_pos + slight_offset[ghost_index],
+                {14*CELL_SIZE, 32}
+            )
+			for fake_ghost.tile_coord != fake_ghost.target_tile_coord {
 				// if game.marker_map[fake_ghosts[ghost_index].tile_coord] == .Slow_Zone {
 				// 	log.debug("BROKE")
 				// 	break
 				// }
-				next_tile_coord, unstuck := ghost_decide_next_move(fake_ghost, ghost_index)
+				next_tile_coord, unstuck := ghost_decide_next_move(
+                    fake_ghost,
+                    ghost_index
+                )
 				if !unstuck {
                     break
 				}
@@ -324,15 +352,17 @@ draw_ghosts :: proc() {
 				pos := get_position_from_tile_coord(next_tile_coord)
 				// rg_blit(pos + slight_offset[ghost_index] * 2, Rect{15*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE})
 				if fake_ghost.direction == .Left || fake_ghost.direction == .Right {
-				    rg_blit(
+				    blit_sprite(
+                        .Small,
 						pos + slight_offset[ghost_index],
-					 	Rect{16*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+					 	{16*CELL_SIZE, 32},
 						{fake_ghost.direction == .Left, false},
 					)
 				} else {
-				    rg_blit(
+				    blit_sprite(
+                        .Small,
 						pos + slight_offset[ghost_index],
-					 	Rect{17*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE},
+					 	{17*CELL_SIZE, 32},
 						{false, fake_ghost.direction == .Up},
 					)
 				}
@@ -343,7 +373,7 @@ draw_ghosts :: proc() {
     }
 }
 
-get_ghost_passable_tiles :: proc(ghost_actor: ^Ghost_Actor) -> bit_set[Tile_Type]{
+get_ghost_passable_tiles :: proc "contextless" (ghost_actor: ^Ghost_Actor) -> bit_set[Tile_Type]{
     if ghost_actor.mode == .Eaten || ghost_actor.reviving {
         return GHOST_PASSABLE_TILES
     }

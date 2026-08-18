@@ -1,6 +1,41 @@
 package main
 
-TEXT_SPRITESHEET_ORDER :: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!:.,?\"-/%=()[]"
+import "core:time"
+import "odinlib:util"
+
+// TEXT_SPRITESHEET_ORDER :: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!:.,?\"-/%=()[]"
+NULL_CHAR_SRC_OFFSET :: vec2{160, 48}
+
+was_button_just_pressed :: proc(button: util.Gamepad_Button) -> bool {
+    return button not_in game.old_input_state.gamepad.buttons && button in game.input_state.gamepad.buttons
+}
+
+are_all_buttons_held :: proc(buttons: util.Gamepad_State_Buttons) -> bool {
+    return buttons <= game.input_state.gamepad.buttons
+}
+
+// Set rumble if not already set, with specified duration and strength
+set_rumble :: proc(duration: time.Duration, strength: f32) {
+    if _, is_set := game.rumble_end_cpu_tick.?; !is_set {
+        game.rumble_end_cpu_tick = time.tick_add(
+            game.last_frame_cpu_tick,
+            duration 
+        )
+        game.init_info.set_gamepad_rumble_proc(strength, 0.0)
+    }
+}
+
+set_freeze_type :: proc(
+    freeze_type: Freeze_Type,
+    dur_ticks: int = DEFAULT_DURATION_TICKS)
+{
+    game.freeze_type = freeze_type
+    if freeze_type == .None {
+        game.freeze_end_sim_tick = 0
+    } else {
+        game.freeze_end_sim_tick = game.sim_ticks + dur_ticks
+    }
+}
 
 check_warp_actor_oob :: proc(actor: ^Actor) {
     min_x := (f32)(-2*CELL_SIZE)
@@ -57,14 +92,18 @@ read_input_record :: proc(rec: ^Input_RLE) -> (Direction, bool) {
 }
 
 draw_text :: proc(text: string, offset: vec2, scale: f32 = 1.0, loc := #caller_location) {
-	rg_texture(game.text_spritesheet)
-	rg_palette(1, color_white_4b)
+	rg_texture(game.spritesheet)
     scaled_cell_size := (i32)(scale * cast(f32)CELL_SIZE)
     rg_begin_multithread()
 	for c, i in text {
+        c := c
+		if c >= 'a' && c <= 'z' {
+			c = (c - 'a') + 'A'
+		}
+        src_offset := game.text_src_offset_map[c] or_else NULL_CHAR_SRC_OFFSET
 		src_rect := Rect{
-			get_text_sprite_xoffset(c),
-			0,
+            src_offset.x,
+            src_offset.y,
 			CELL_SIZE,
 			CELL_SIZE,
 		}
@@ -79,20 +118,20 @@ draw_text :: proc(text: string, offset: vec2, scale: f32 = 1.0, loc := #caller_l
     rg_end_multithread()
 }
 
-get_text_sprite_xoffset :: proc(target_c: rune) -> i32 {
-	idx := 0
-	target_c := target_c
-	for c, i in TEXT_SPRITESHEET_ORDER {
-		if target_c >= 'a' && target_c <= 'z' {
-			target_c = (target_c - 'a') + 'A'
-		}
-		if target_c == c {
-			return cast(i32)i * CELL_SIZE,
-		}
-	}
-	// Returns last character which is placeholder
-	return cast(i32)len(TEXT_SPRITESHEET_ORDER) * CELL_SIZE
-}
+// get_text_sprite_src_offset :: proc(target_c: rune) -> i32 {
+// 	idx := 0
+// 	target_c := target_c
+// 	for c, i in TEXT_SPRITESHEET_ORDER {
+// 		if target_c >= 'a' && target_c <= 'z' {
+// 			target_c = (target_c - 'a') + 'A'
+// 		}
+// 		if target_c == c {
+// 			return cast(i32)i * CELL_SIZE,
+// 		}
+// 	}
+// 	// Returns last character which is placeholder
+// 	return cast(i32)len(TEXT_SPRITESHEET_ORDER) * CELL_SIZE
+// }
 
 get_adjacent_tile :: proc "contextless" (
 	tile_coord: Tile_Coord,

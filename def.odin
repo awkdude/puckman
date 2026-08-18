@@ -22,10 +22,12 @@ Freeze_Type :: enum {
     Death2,
     Game_Over,
     Ready,
-}
+} 
+
+DEFAULT_DURATION_TICKS :: SIM_UPDATE_HZ
 
 // if (end_tick - now_ticks) > this, don't draw stuff
-READY_BLANK_TICK_DIFF_MIN :: 60
+READY_BLANK_TICK_DIFF_MIN :: SIM_UPDATE_HZ-10
 
 Debug_Mode :: enum {
 	None,
@@ -37,7 +39,7 @@ Debug_Mode :: enum {
 Actor :: struct {
 	position: vec2f,
 	direction: Direction,
-	tile_coord: Tile_Coord,
+	tile_coord, reset_tile_coord: Tile_Coord,
 }
 
 Player :: struct {
@@ -189,6 +191,17 @@ DIRECTION_VECTORS := [Direction]vec2f {
 GHOST_FRIGHTENED_SPEED :: 0.3
 GHOST_EATEN_SPEED :: 1.7
 
+Sprite_Size :: enum {
+    Big,
+    Small,
+}
+
+Sprite :: struct {
+    src_offset: vec2,
+    flip: [2]bool,
+}
+
+
 GHOST_SPRITES := [Direction][2]Sprite {
 	.None={},
 	.Left = {
@@ -232,7 +245,6 @@ GHOST_SPRITES := [Direction][2]Sprite {
 		},
 	},
 }
-
 
 TILE_SPRITES :=  [Tile_Type]Sprite {
     .None={},

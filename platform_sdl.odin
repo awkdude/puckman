@@ -225,6 +225,11 @@ when PLATFORM_BACKEND == "sdl" {
 	                    keycode=translate_sdl_key_to_keycode(cast(u32)sdl_event.key.key),
 	                }
 	            }
+                if sdl_event.type == .KEY_DOWN && sdl_event.key.key == sdl.K_F11 {
+                    @(static) window_is_fullscreen := false
+                    window_is_fullscreen = !window_is_fullscreen 
+                    sdl.SetWindowFullscreen(sdl_window, window_is_fullscreen)
+                }
 	        }
 	        case .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP:
 	            // TODO: may have to check for sdl_event.button.clicks

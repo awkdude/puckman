@@ -25,6 +25,9 @@ Tile_Edit :: struct {
 MAZE_LOWER_BOUND_Y :: 3
 MAZE_UPPER_BOUND_Y :: ROWS-2
 
+LOCK_TEXT_SRC_OFFSET   :: vec2{168, 48}
+UNLOCK_TEXT_SRC_OFFSET :: vec2{176, 48}
+
 editor_init :: proc() {
 
 }
@@ -68,24 +71,20 @@ update_editor :: proc() {
 		switch game.editor.selected_marker_tile {
 		case .None:
 		case .Player_Start:
-			rg_texture(game.player_spritesheet)
 			rg_blit(get_position_from_tile_coord({7, ROWS-2}), Rect{0, 0, PLAYER_SIZE, PLAYER_SIZE})
 		case .Blinky_Start:
-			rg_texture(game.ghost_spritesheet)
 			rg_palette(1, GHOST_COLORS[.Blinky])
 			rg_blit(get_position_from_tile_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
+			blit_sprite(.Big, get_position_from_tile_coord({7, ROWS-2}), vec2{2*PLAYER_SIZE, PLAYER_SIZE})
 		case .Pinky_Start:
-			rg_texture(game.ghost_spritesheet)
 			rg_palette(1, GHOST_COLORS[.Pinky])
-			rg_blit(get_position_from_tile_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
+			blit_sprite(.Big, get_position_from_tile_coord({7, ROWS-2}), vec2{2*PLAYER_SIZE, PLAYER_SIZE})
 		case .Inky_Start:
-			rg_texture(game.ghost_spritesheet)
 			rg_palette(1, GHOST_COLORS[.Inky])
-			rg_blit(get_position_from_tile_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
+			blit_sprite(.Big, get_position_from_tile_coord({7, ROWS-2}), vec2{2*PLAYER_SIZE, PLAYER_SIZE})
 		case .Clyde_Start:
-			rg_texture(game.ghost_spritesheet)
 			rg_palette(1, GHOST_COLORS[.Clyde])
-			rg_blit(get_position_from_tile_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
+			blit_sprite(.Big, get_position_from_tile_coord({7, ROWS-2}), vec2{2*PLAYER_SIZE, PLAYER_SIZE})
 		case .Ghost_Decision:
 			p := get_position_from_tile_coord({7, ROWS-2})
 			rg_fill_rect(Rect{p.x, p.y, PLAYER_SIZE, PLAYER_SIZE}, color_green_4b)

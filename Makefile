@@ -17,4 +17,4 @@ build_release:
 	odin build . -o:speed --collection:odinlib=../odinlib
 
 clean:
-	$(RM) $(TARGET)*  *.obj *.pdb *.exe
+	$(RM) *.obj *.pdb *.exe

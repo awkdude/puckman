@@ -242,28 +242,6 @@ main :: proc() {
             window_handle,
             &client_rect
         )
-        // Read raw input  {{{
-        // raw_input: win.RAWINPUT
-        // dwSize := cast(win.UINT)size_of(raw_input);
-        // win.GetRawInputData(
-        //     transmute(win.HRAWINPUT)lparam,
-        //     win.RID_INPUT,
-        //     &raw_input,
-        //     &dwSize,
-        //     size_of(win.RAWINPUTHEADER)
-        // )
-        // if raw_input.header.dwType == win.RIM_TYPEMOUSE {
-        //     // window_event.event_type = win.WINDOW_EVENT_RAW_MOUSE;
-        //     // window_event.vec2 = (Vec2){raw_input.data.mouse.lLastX, raw_input.data.mouse.lLastY};
-        //     log.debugf(
-        //         "%v",
-        //         vec2 {
-        //             raw_input.data.mouse.lLastX,
-        //             raw_input.data.mouse.lLastY,
-        //         }
-        //     )
-        // }
-        // }}}
         gamepad_state, is_connected := get_gamepad_state_xinput()
         eng_update := Engine_Update{
                 window_dims={
@@ -576,7 +554,6 @@ window_proc :: proc "stdcall" (
 }
 
 handle_platform_command_win :: proc(command: util.Platform_Command) {
-    // {{{
     #partial switch command.type {
     case .Quit:
         win.DestroyWindow(window_handle)
@@ -637,22 +614,18 @@ handle_platform_command_win :: proc(command: util.Platform_Command) {
             )
         )
     }
- // }}}
 }
 
 set_gamepad_rumble_xinput :: proc(weak, strong: f32) {
-    // {{{
-    weak_ := cast(u16)(math.clamp(weak, 0.0, 1.0) * cast(f32)bits.U16_MAX)
-    strong_ := cast(u16)(math.clamp(strong, 0.0, 1.0) * cast(f32)bits.U16_MAX)
+    weak_ := (u16)(math.clamp(weak, 0.0, 1.0) * cast(f32)bits.U16_MAX)
+    strong_ := (u16)(math.clamp(strong, 0.0, 1.0) * cast(f32)bits.U16_MAX)
     win.XInputSetState(.One, &{
         wLeftMotorSpeed=weak_,
         wRightMotorSpeed=strong_,
     })
-    // }}}
 }
 
 get_gamepad_state_xinput :: proc() -> (util.Gamepad_State, bool) {
-// {{{
     @(static) old_packet_number: win.DWORD
     xinput_state: win.XINPUT_STATE
     if win.XInputGetState(.One, &xinput_state) != .SUCCESS {
@@ -712,6 +685,5 @@ get_gamepad_state_xinput :: proc() -> (util.Gamepad_State, bool) {
     }
     old_packet_number = xinput_state.dwPacketNumber
     return gamepad_state, true
-// }}}}
 }
 }
