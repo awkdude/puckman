@@ -5,6 +5,7 @@ import "core:os"
 import "core:strings"
 import "core:fmt"
 import "core:log"
+import "core:math"
 
 Editor_State :: struct {
 	tile_placement_tile_coord: Tile_Coord,
@@ -48,17 +49,19 @@ update_editor :: proc() {
 		}
 		tile_sprite := TILE_SPRITES[cast(Tile_Type)game.editor.selected_tile]
 		rg_texture(game.spritesheet)
-		rg_blit(
-            get_position_from_tile_coord({7, ROWS-2}),
-            Rect{
-                tile_sprite.src_offset.x,
-                tile_sprite.src_offset.y,
-                CELL_SIZE,
-                CELL_SIZE
-            },
-            tile_sprite.flip,
-            PLAYER_DIMS
-        )
+        if game.editor.selected_tile != .None {
+            rg_blit(
+                get_position_from_tile_coord({7, ROWS-2}),
+                Rect{
+                    tile_sprite.src_offset.x,
+                    tile_sprite.src_offset.y,
+                    CELL_SIZE,
+                    CELL_SIZE
+                },
+                tile_sprite.flip,
+                PLAYER_DIMS
+            )
+        }
 		draw_text("TILE: ", get_position_from_tile_coord({0, ROWS-1}))
 		rg_fill_rect(Rect{pos.x, pos.y, CELL_SIZE, CELL_SIZE}, color_purple_4b)
 	} else if game.editor.mode == .Marker {
@@ -74,7 +77,6 @@ update_editor :: proc() {
 			rg_blit(get_position_from_tile_coord({7, ROWS-2}), Rect{0, 0, PLAYER_SIZE, PLAYER_SIZE})
 		case .Blinky_Start:
 			rg_palette(1, GHOST_COLORS[.Blinky])
-			rg_blit(get_position_from_tile_coord({7, ROWS-2}), Rect{2*PLAYER_SIZE, 0, PLAYER_SIZE, PLAYER_SIZE})
 			blit_sprite(.Big, get_position_from_tile_coord({7, ROWS-2}), vec2{2*PLAYER_SIZE, PLAYER_SIZE})
 		case .Pinky_Start:
 			rg_palette(1, GHOST_COLORS[.Pinky])
@@ -179,10 +181,14 @@ undo_tile_edit :: proc() {
 editor_handle_event :: proc(window_event: util.Window_Event) {
 	#partial switch window_event.type {
 	case .Mouse_Move:
-		mouse_pos := (vec2)(cast(vec2f)INTERN_FRAMEBUFFER_DIMS * (cast(vec2f)window_event.vec2 / cast(vec2f)game.window_size))
+		mouse_pos := (vec2)(cast(vec2f)INTERN_FRAMEBUFFER_DIMS * (cast(vec2f)window_event.vec2 / cast(vec2f)game.scaled_framebuffer_dims))
 		// mouse_tile_index := get_tile_index_from_position(mouse_pos)
 		// mouse_tile_pos := get_position_from_tile_index(mouse_tile_index)
 		game.editor.tile_placement_tile_coord = get_tile_coord_from_position(mouse_pos)
+        game.editor.tile_placement_tile_coord = {
+            math.clamp(game.editor.tile_placement_tile_coord.x, 0, COLS-1),
+            math.clamp(game.editor.tile_placement_tile_coord.y, 0, ROWS-1),
+        }
 	case .Mouse_Button:
 	case .Key:
 		if !window_event.key.pressed || window_event.key.repeated do return

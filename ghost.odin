@@ -35,20 +35,33 @@ unfrighten_all :: proc() {
 	}
 }
 
-update_ghosts :: proc() {
-    GHOST_SPEED :: 0.57
-    anim_update(&game.ghost_anim, game.last_frame_cpu_tick)
-    do_mode_switch := false && game.sim_ticks >= game.ghost_mode_switch_end_sim_tick
-    if do_mode_switch {
+advance_ghost_mode_switch :: proc() {
+    level_idx := math.clamp(game.level_count, 1, len(GHOST_MODE_SWITCH_LEVEL_INTERVALS))
+    if game.ghost_mode_switch_interval_index < 7 {
+        game.mode_switch_sim_ticks_remaining = GHOST_MODE_SWITCH_LEVEL_INTERVALS[level_idx][game.ghost_mode_switch_interval_index]
         if game.ghost_global_mode == .Chase {
             game.ghost_global_mode = .Scatter
         } else {
             game.ghost_global_mode = .Chase
         }
-        game.ghost_mode_switch_end_sim_tick = game.sim_ticks + 5*SIM_UPDATE_HZ
+        game.ghost_mode_switch_interval_index += 1
     }
+}
+
+update_ghosts :: proc() {
+    GHOST_SPEED :: 0.57
+    anim_update(&game.ghost_anim, game.last_frame_cpu_tick)
+    do_mode_switch := game.mode_switch_sim_ticks_remaining == 0
+    if do_mode_switch {
+        advance_ghost_mode_switch()
+        if game.ghost_mode_switch_interval_index >= 7 {
+            do_mode_switch = false
+        }
+    }
+    game.mode_switch_sim_ticks_remaining -= 1
 	for ghost_index in Ghost_Type {
         ghost_actor := &game.ghosts[ghost_index]
+        // Skip update if freeze type is Eat_Ghost and ghost isn't in Eaten state
         if game.freeze_type == .Eat_Ghost && (game.eaten_ghost == ghost_index || ghost_actor.mode != .Eaten) 
         {
             continue
@@ -58,43 +71,67 @@ update_ghosts :: proc() {
         {
             ghost_actor.direction = OPPOSITE_DIRECTION[ghost_actor.direction]
         }
-        log.debugf("%v: %v", ghost_index, ghost_actor.position)
         check_warp_actor_oob(ghost_actor)
         passable_tiles := get_ghost_passable_tiles(ghost_actor)
         current_tile_coord := get_tile_coord_from_position(cast(vec2)ghost_actor.position)
         if ghost_actor.mode == .Eaten {
             if current_tile_coord == game.ghost_revive_tile_coord {
-                ghost_actor.mode = .None
                 ghost_actor.direction = .Up
-                ghost_actor.reviving = true
-                ghost_actor.target_tile_coord = game.ghost_pass_tile_coord + {0, -1}
+                ghost_actor.mode = .Revive
+                ghost_actor.target_tile_coord = game.ghost_exit_tile_coord
             }
-        } else if ghost_actor.reviving {
-            if current_tile_coord == ghost_actor.target_tile_coord {
-                ghost_actor.reviving = false
+        } else if ghost_actor.mode == .Revive {
+            if current_tile_coord == game.ghost_revive_tile_coord {
+                ghost_actor.direction = .Up
+            } else if current_tile_coord == game.ghost_exit_tile_coord {
+                ghost_actor.mode = .None
+            }
+        } else if ghost_actor.mode == .Idle {
+            ghost_actor.leave_remaining_sim_ticks -= 1
+            if ghost_actor.leave_remaining_sim_ticks <= 0 && current_tile_coord == ghost_actor.reset_tile_coord 
+            {
+                diff := current_tile_coord.x - game.ghost_revive_tile_coord.x 
+                if diff < 0 {
+                    ghost_actor.direction = .Right
+                } else if diff > 0 {
+                    ghost_actor.direction = .Left
+                }
+                center_actor_in_tile_coord(ghost_actor, current_tile_coord)
+                ghost_actor.mode = .Revive
+            }
+            if current_tile_coord != ghost_actor.reset_tile_coord {
+                // above_tile_coord := ghost_actor.reset_tile_coord + {0, -1}
+                // below_tile_coord := ghost_actor.reset_tile_coord + {0, 1}
+                if ghost_actor.direction == .Up {
+                    ghost_actor.direction = .Down
+                } else if ghost_actor.direction == .Down {
+                    ghost_actor.direction = .Up
+                }
             }
         }
         next_tile, next_ok := get_adjacent_tile(ghost_actor.tile_coord, ghost_actor.direction)
         ghost_speed: f32 = GHOST_SPEED 
         if ghost_actor.mode == .Eaten {
             ghost_speed = GHOST_EATEN_SPEED
-        } else if ghost_actor.mode == .Frightened || game.marker_map[ghost_tile_index] == .Slow_Zone || ghost_actor.reviving  {
+        } else if ghost_actor.mode == .Frightened || ghost_actor.mode == .Revive || game.marker_map[ghost_tile_index] == .Slow_Zone
+        {
             ghost_speed = GHOST_FRIGHTENED_SPEED
         }
         if current_tile_coord == ghost_actor.next_tile_coord {
            	tile_center_pos := get_position_from_tile_coord(ghost_actor.next_tile_coord) + CELL_DIMS/2
            	diff := ghost_actor.position - cast(vec2f)tile_center_pos
-            cond: bool
-            cond = math.abs(diff.x) < ghost_speed && math.abs(diff.y) < ghost_speed
+            in_range := math.abs(diff.x) < ghost_speed && math.abs(diff.y) < ghost_speed
             if ghost_speed > 2.6 {
             	// ghost_actor.position = cast(vec2f)tile_center_pos
 	            // cond = true
             }
-            if cond {
+            if ghost_actor.mode != .Idle && in_range {
                 ghost_actor.next_tile_coord, _ = ghost_decide_next_move(ghost_actor, ghost_index)
             }
         } else if next_ok && next_tile^ not_in passable_tiles {
-            ghost_actor.next_tile_coord, _ = ghost_decide_next_move(ghost_actor, ghost_index)
+            if ghost_actor.mode != .Idle {
+                ghost_actor.next_tile_coord, _ = ghost_decide_next_move(ghost_actor, ghost_index)
+            }
         }
         ghost_actor.tile_coord = current_tile_coord
         next_tile, next_ok = get_adjacent_tile(ghost_actor.tile_coord, ghost_actor.direction)
@@ -105,16 +142,33 @@ update_ghosts :: proc() {
         if next_ok && next_tile^ not_in passable_tiles {
             #partial switch ghost_actor.direction {
             case .Left:
-                ghost_actor.position.x = max(cast(f32)current_tile_center.x, ghost_actor.position.x)
+                ghost_actor.position.x = max(
+                    cast(f32)current_tile_center.x,
+                    ghost_actor.position.x
+                )
             case .Right:
-                ghost_actor.position.x = min(cast(f32)current_tile_center.x, ghost_actor.position.x)
+                ghost_actor.position.x = min(
+                    cast(f32)current_tile_center.x,
+                    ghost_actor.position.x
+                )
             case .Up:
-                ghost_actor.position.y = max(cast(f32)current_tile_center.y, ghost_actor.position.y)
+                ghost_actor.position.y = max(
+                    cast(f32)current_tile_center.y,
+                    ghost_actor.position.y
+                )
             case .Down:
-                ghost_actor.position.y = min(cast(f32)current_tile_center.y, ghost_actor.position.y)
+                ghost_actor.position.y = min(
+                    cast(f32)current_tile_center.y,
+                    ghost_actor.position.y
+                )
             }
         }
 	}
+}
+
+center_actor_in_tile_coord :: proc(actor: ^Actor, tile_coord: Tile_Coord) {
+    actor.position =  cast(vec2f)(get_position_from_tile_coord(tile_coord) + CELL_DIMS/2)
+    actor.tile_coord = tile_coord
 }
 
 // Returns next tile that ghost will target
@@ -131,7 +185,8 @@ ghost_decide_next_move :: proc(ghost: ^Ghost_Actor, ghost_index: Ghost_Type) -> 
         adj_tile_index := get_tile_index_from_tile_coord(adj_tile_coord)
         current_tile_index := get_tile_index_from_tile_coord(ghost.tile_coord)
         // Skip going up if we're not frightened nor eaten, and we're in a no-up zone
-        if ghost.mode == .None && game.marker_map[current_tile_index] == .No_Up_Zone && direction == .Up {
+        if ghost.mode == .None && game.marker_map[current_tile_index] == .No_Up_Zone && direction == .Up 
+        {
             continue
         }
         passable_tiles := get_ghost_passable_tiles(ghost) 
@@ -200,7 +255,7 @@ calculate_ghost_targets :: proc() {
     for ghost_index in Ghost_Type {
         ghost_actor := &game.ghosts[ghost_index]
         // Don't update target tile if reviving
-        if ghost_actor.reviving do break
+        if ghost_actor.mode == .Revive || ghost_actor.mode == .Idle do break
         if ghost_actor.mode == .Eaten {
             ghost_actor.target_tile_coord = game.ghost_revive_tile_coord
         } else if game.ghost_global_mode == .Scatter || ghost_actor.mode == .Frightened {
@@ -246,7 +301,7 @@ draw_ghosts :: proc() {
 	        sprite_data: Sprite
             ghost_actor := &game.ghosts[ghost_index]
             draw_pos := cast(vec2)ghost_actor.position - PLAYER_DIMS/2
-            switch game.ghosts[ghost_index].mode {
+            #partial switch game.ghosts[ghost_index].mode {
             case .Eaten:
                 src_offset: vec2
                 if game.freeze_type == .Eat_Ghost && game.eaten_ghost == ghost_index {
@@ -289,7 +344,7 @@ draw_ghosts :: proc() {
                     src_offset={cast(i32)game.ghost_anim.frame_index*PLAYER_SIZE, 16}
                 }
                 blit_sprite(.Big, draw_pos, sprite_data.src_offset, sprite_data.flip)
-            case .None:
+            case:
                 rg_palette(1, GHOST_COLORS[ghost_index])
 	        	sprite_data = GHOST_SPRITES[ghost_actor.direction][game.ghost_anim.frame_index]
                 blit_sprite(.Big, draw_pos, sprite_data.src_offset, sprite_data.flip)
@@ -336,6 +391,7 @@ draw_ghosts :: proc() {
                 target_tile_pos + slight_offset[ghost_index],
                 {14*CELL_SIZE, 32}
             )
+            // Draws path to ghost's target
 			for fake_ghost.tile_coord != fake_ghost.target_tile_coord {
 				// if game.marker_map[fake_ghosts[ghost_index].tile_coord] == .Slow_Zone {
 				// 	log.debug("BROKE")
@@ -374,7 +430,7 @@ draw_ghosts :: proc() {
 }
 
 get_ghost_passable_tiles :: proc "contextless" (ghost_actor: ^Ghost_Actor) -> bit_set[Tile_Type]{
-    if ghost_actor.mode == .Eaten || ghost_actor.reviving {
+    if ghost_actor.mode == .Eaten || ghost_actor.mode == .Revive {
         return GHOST_PASSABLE_TILES
     }
     return PASSABLE_TILES

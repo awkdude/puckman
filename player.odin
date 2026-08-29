@@ -18,7 +18,7 @@ update_player :: proc() {
             game.dots_remaining -= 1
             did_chomp = true
             if game.dots_remaining <= 0 {
-                set_freeze_type(.Clear_Maze1)
+                set_freeze_type(.Clear_Maze1, 3*SIM_UPDATE_HZ)
             }
         } else if player_tile^ == .Pellet {
             frighten_all()
@@ -28,16 +28,19 @@ update_player :: proc() {
             set_rumble(100*time.Millisecond, 0.6)
         }
     }
-    player_target_direction := game.player_target_direction
+    player_target_direction := game.user_input_direction
+    if player_target_direction == nil {
+        player_target_direction = game.player.direction
+    }
     check_warp_actor_oob(&game.player)
     tile_pos := get_position_from_tile_coord(game.player.tile_coord)
     current_tile_center := tile_pos + (CELL_DIMS/2)
     next_tile, next_ok := get_adjacent_tile(game.player.tile_coord, game.player.direction)
-    next_target_tile, target_ok := get_adjacent_tile(game.player.tile_coord, game.player_target_direction)
+    next_target_tile, target_ok := get_adjacent_tile(game.player.tile_coord, player_target_direction)
     // assert(!(game.player_target_direction == .Down && !target_ok))
-    if game.player_target_direction != nil && target_ok {
+    if player_target_direction != nil && target_ok {
         if next_target_tile^ in PASSABLE_TILES {
-            game.player.direction = game.player_target_direction
+            game.player.direction = player_target_direction
             #partial switch game.player.direction {
             case .Up, .Down:
                 // Position player x value to tile's center x if up or down
@@ -155,46 +158,42 @@ draw_player :: proc() {
 
 // Sets player's target direction from input.
 // Gamepad input has priority over keyboard
-set_direction_from_input :: proc "contextless" () {
-	game.player_target_direction = nil
+update_user_input_direction :: proc "contextless" () {
+	game.user_input_direction = nil
 	switch {
 	case .LEFT in game.input_state.gamepad.hat:
-		game.player_target_direction = .Left
+		game.user_input_direction = .Left
 	case .RIGHT in game.input_state.gamepad.hat:
-		game.player_target_direction = .Right
+		game.user_input_direction = .Right
 	case .UP in game.input_state.gamepad.hat:
-		game.player_target_direction = .Up
+		game.user_input_direction = .Up
 	case .DOWN in game.input_state.gamepad.hat:
-		game.player_target_direction = .Down
+		game.user_input_direction = .Down
 	}
 	// Read thumbstick input if dpad is not pressed
-	if game.player_target_direction == nil {
-		// TODO:
+	if game.user_input_direction == nil {
 		switch {
-		case game.input_state.gamepad.axes[.LEFT_X] < -THUMBSTICK_THRESHOLD:
-			game.player_target_direction = .Left
-		case game.input_state.gamepad.axes[.LEFT_X] > THUMBSTICK_THRESHOLD:
-			game.player_target_direction = .Right
-		case game.input_state.gamepad.axes[.LEFT_Y] < -THUMBSTICK_THRESHOLD:
-			game.player_target_direction = .Up
-		case game.input_state.gamepad.axes[.LEFT_Y] > THUMBSTICK_THRESHOLD:
-			game.player_target_direction = .Down
+        case .LEFT_X_LEFT in game.input_state.gamepad.buttons: 
+			game.user_input_direction = .Left
+        case .LEFT_X_RIGHT in game.input_state.gamepad.buttons: 
+			game.user_input_direction = .Right
+        case .LEFT_Y_UP in game.input_state.gamepad.buttons: 
+			game.user_input_direction = .Up
+        case .LEFT_Y_DOWN in game.input_state.gamepad.buttons: 
+			game.user_input_direction = .Down
 		}
 	}
-	// Read keyboard input if not input from gamepad
-	if game.player_target_direction == nil {
+	// Read keyboard input if no input from gamepad
+	if game.user_input_direction == nil {
 		switch {
 		case util.bit_test(game.input_state.keyboard[:], util.KEY_LEFT):
-			game.player_target_direction = .Left
+			game.user_input_direction = .Left
 		case util.bit_test(game.input_state.keyboard[:], util.KEY_RIGHT):
-			game.player_target_direction = .Right
+			game.user_input_direction = .Right
 		case util.bit_test(game.input_state.keyboard[:], util.KEY_UP):
-			game.player_target_direction = .Up
+			game.user_input_direction = .Up
 		case util.bit_test(game.input_state.keyboard[:], util.KEY_DOWN):
-			game.player_target_direction = .Down
+			game.user_input_direction = .Down
 		}
-	}
-	if game.player_target_direction == nil {
-		game.player_target_direction = game.player.direction
 	}
 }

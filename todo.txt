@@ -4,7 +4,7 @@
 [x] Make simple level editor
 [x] Fix indexed flipped y blit
 [ ] Add sound
-[ ] Pacman death animation
+[x] Pacman death animation
 [ ] Fix blit (segfault on Linux)
 [ ] assert fail when window minimized
 [ ] Record player input

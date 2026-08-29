@@ -1,17 +1,42 @@
 package main
 
 import "core:time"
+import "core:math"
+import "core:log"
 import "odinlib:util"
 
-// TEXT_SPRITESHEET_ORDER :: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!:.,?\"-/%=()[]"
 NULL_CHAR_SRC_OFFSET :: vec2{160, 48}
 
-was_button_just_pressed :: proc(button: util.Gamepad_Button) -> bool {
+is_button_pressed :: #force_inline proc "contextless" (button: util.Gamepad_Button) -> bool 
+{
     return button not_in game.old_input_state.gamepad.buttons && button in game.input_state.gamepad.buttons
 }
 
-are_all_buttons_held :: proc(buttons: util.Gamepad_State_Buttons) -> bool {
+are_all_buttons_held :: #force_inline proc "contextless"(buttons: util.Gamepad_State_Buttons) -> bool 
+{
     return buttons <= game.input_state.gamepad.buttons
+}
+
+is_key_pressed :: #force_inline proc "contextless" (keycode: u32) -> bool {
+    return util.bit_test(game.input_state.keys_pressed[:], keycode)
+}
+
+is_key_held :: #force_inline proc "contextless" (keycode: u32) -> bool {
+    return util.bit_test(game.input_state.keyboard[:], keycode)
+}
+
+is_any_key_pressed :: proc "contextless" (keycodes: ..u32) -> bool {
+    for key in keycodes {
+        if util.bit_test(game.input_state.keys_pressed[:], key) {
+            return true
+        }
+    }
+    return false
+}
+
+triangle_func :: proc(t, period: f32) -> f32 {
+    t := math.mod(t, period) / period
+    return math.lerp(cast(f32)0.0, cast(f32)1.0, t/2) if t < period/2 else math.lerp(cast(f32)1.0, cast(f32)0.0, t/2)
 }
 
 // Set rumble if not already set, with specified duration and strength
@@ -25,15 +50,20 @@ set_rumble :: proc(duration: time.Duration, strength: f32) {
     }
 }
 
+set_title_screen :: proc() {
+    game.state = .Title
+    game.title_screen_end_sim_ticks = game.sim_ticks + SIM_UPDATE_HZ*8
+}
+
 set_freeze_type :: proc(
     freeze_type: Freeze_Type,
-    dur_ticks: int = DEFAULT_DURATION_TICKS)
+    duration_ticks: int = DEFAULT_DURATION_TICKS)
 {
     game.freeze_type = freeze_type
     if freeze_type == .None {
         game.freeze_end_sim_tick = 0
     } else {
-        game.freeze_end_sim_tick = game.sim_ticks + dur_ticks
+        game.freeze_end_sim_tick = game.sim_ticks + duration_ticks
     }
 }
 
@@ -65,30 +95,43 @@ blit_sprite :: #force_inline proc(
 
 Input_RLE :: struct {
     buffer: []u8,
-    byte_index: int,
-    run_value, run_length: u8
+    write_index, read_index: int,
+    read_value, run_value, run_length: u8,
+    read_count: int,
+    did_warn: bool
 }
 
-record_input :: proc(rec: ^Input_RLE, input: Direction) {
+input_rle_record :: proc(rec: ^Input_RLE, input: Direction) {
+    assert(rec.buffer != nil, "Input buffer is nil")
     input := cast(u8)input
     if input == rec.run_value && rec.run_length < 255 {
         rec.run_length += 1
     } else {
-        // For now, just write 2 bytes. Writing bits would be better
-        rec.buffer[rec.byte_index] = rec.run_length
-        rec.buffer[rec.byte_index+1] = rec.run_value
-        rec.byte_index += 2
-        rec.run_length = 0
-        rec.run_value = input
+        if (rec.write_index+2) < len(rec.buffer) {
+           rec.buffer[rec.write_index] = rec.run_length
+            rec.buffer[rec.write_index+1] = rec.run_value
+            rec.write_index += 2
+            rec.run_length = 0
+            rec.run_value = input
+        } else {
+            if !rec.did_warn {
+                log.warn("Input buffer is full!")
+            }
+        }
     }
 }
 
-read_input_record :: proc(rec: ^Input_RLE) -> (Direction, bool) {
-    if rec.byte_index >= len(rec.buffer) {
-        return nil, false
+input_rle_read :: proc(rec: ^Input_RLE) -> (Direction, bool) {
+    rec.read_count -= 1
+    if rec.read_count <= 0 {
+        if rec.read_index >= len(rec.buffer) {
+            return nil, false
+        }
+        rec.read_count = cast(int)rec.buffer[rec.read_index]
+        rec.read_value = rec.buffer[rec.read_index+1]
+        rec.read_index += 2
     }
-    // TODO:
-    return nil, false
+    return cast(Direction)rec.read_value, true
 }
 
 draw_text :: proc(text: string, offset: vec2, scale: f32 = 1.0, loc := #caller_location) {

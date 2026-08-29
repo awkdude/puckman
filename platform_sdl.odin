@@ -82,6 +82,10 @@ when PLATFORM_BACKEND == "sdl" {
                 }
             }
         }
+        // Load gamepad mappings
+        if sdl.AddGamepadMappingsFromFile("gamecontrollerdb.txt") == -1 {
+            log.error("Failture when loading gamepad mappings from 'gamecontrollerdb.txt'")
+        }
         when true {
             desired_audio_spec := sdl.AudioSpec {
                 freq=44100,
@@ -114,7 +118,7 @@ when PLATFORM_BACKEND == "sdl" {
                         raw_data(audio_buffer),
                         amount
                     )
-                    log.debugf("PUSED %v bytes", total_amount)
+                    // log.debugf("PUSED %v bytes", total_amount)
                 },
                 &phase
             )
@@ -263,7 +267,6 @@ when PLATFORM_BACKEND == "sdl" {
 	                },
 	            }
 				window_surface := sdl.GetWindowSurface(sdl_window)
-				log.debugf("W: %v, H: %v", window_surface.w, window_surface.h)
 	        case .MOUSE_WHEEL: {
 	            window_event = util.Window_Event {
 	                type=.Mouse_Wheel,
@@ -354,6 +357,7 @@ when PLATFORM_BACKEND == "sdl" {
 		    }
 	    } else {
 			if !sdl.GamepadConnected(sdl_gamepad) {
+                log.debugf("%s disconnected", sdl.GetGamepadName(sdl_gamepad))
 				sdl_gamepad = nil
 				return {}, false
 			}

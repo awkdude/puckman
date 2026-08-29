@@ -8,13 +8,16 @@ endif
 .PHONY: build clean
 
 build:
-	odin build . -debug -sanitize:address --collection:odinlib=../odinlib
+	odin build . -debug -sanitize:address --collection:odinlib=odinlib
 
 build_sdl:
-	odin build . -debug -sanitize:address --collection:odinlib=../odinlib --define:BACKEND=sdl
+	odin build . -debug -sanitize:address --collection:odinlib=odinlib --define:BACKEND=sdl
 
 build_release:
-	odin build . -o:speed --collection:odinlib=../odinlib
+	odin build . -o:speed --collection:odinlib=odinlib
+
+test:
+	odin test . --collection:odinlib=odinlib
 
 clean:
 	$(RM) *.obj *.pdb *.exe

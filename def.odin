@@ -1,13 +1,15 @@
 package main
 
+import "core:time"
+
 // TODO: Define big array for all sprites in game
 
-Game_Phase :: enum {
-    Ready,
-    Play,
-    Death,
-    Game_Over,
-    Complete,
+Game_State :: enum {
+    // Title screen
+    Title, 
+    // Game itself
+    Maze,
+    Intermission,
 }
 
 Freeze_Type :: enum {
@@ -23,6 +25,36 @@ Freeze_Type :: enum {
     Game_Over,
     Ready,
 } 
+
+GHOST_MODE_SWITCH_LEVEL_INTERVALS := [?][7]Sim_Tick {
+    1={
+        7*SIM_UPDATE_HZ,
+        20*SIM_UPDATE_HZ,
+        7*SIM_UPDATE_HZ,
+        20*SIM_UPDATE_HZ,
+        5*SIM_UPDATE_HZ,
+        20*SIM_UPDATE_HZ,
+        5*SIM_UPDATE_HZ,
+    },
+    2..=4={
+        7*SIM_UPDATE_HZ,
+        20*SIM_UPDATE_HZ,
+        7*SIM_UPDATE_HZ,
+        20*SIM_UPDATE_HZ,
+        5*SIM_UPDATE_HZ,
+        120*SIM_UPDATE_HZ,
+        SIM_UPDATE_HZ,
+    },
+    5={
+        5*SIM_UPDATE_HZ,
+        20*SIM_UPDATE_HZ,
+        5*SIM_UPDATE_HZ,
+        20*SIM_UPDATE_HZ,
+        5*SIM_UPDATE_HZ,
+        120*SIM_UPDATE_HZ,
+        SIM_UPDATE_HZ,
+    }
+}
 
 DEFAULT_DURATION_TICKS :: SIM_UPDATE_HZ
 
@@ -146,14 +178,23 @@ Ghost_Unique_Mode :: enum {
 	None,
 	Frightened,
 	Eaten,
+    // goto above ghost pass
+    Revive, 
+    Idle,
 }
+
+Ghost_Move :: struct {
+    direction: Direction,
+    next_tile: Tile_Coord,
+} 
 
 Ghost_Actor :: struct {
 	using actor: Actor,
 	mode: Ghost_Unique_Mode,
 	next_tile_coord, target_tile_coord: Tile_Coord,
-    // Set when ghost still in ghost house after being eaten
-    reviving: bool,
+    leave_remaining_sim_ticks: Sim_Tick,
+    // move_list: []Ghost_Move,
+    // move_list_index: int,
 }
 
 GHOST_FRIGHTENED_TICK_DIFF :: 2*SIM_UPDATE_HZ
@@ -163,6 +204,12 @@ GHOST_SCATTER_TARGET_TILE_COORD := [Ghost_Type]Tile_Coord {
 	.Pinky = {2, 0},
 	.Inky = {COLS-1, ROWS-1},
 	.Clyde = {0, ROWS-1},
+}
+
+GHOST_LEAVE_DURATIONS := #partial [Ghost_Type] Sim_Tick {
+    .Pinky = 3*SIM_UPDATE_HZ,
+    .Inky = 7*SIM_UPDATE_HZ,
+    .Clyde = 12*SIM_UPDATE_HZ,
 }
 
 PASSABLE_TILES :: bit_set[Tile_Type] {

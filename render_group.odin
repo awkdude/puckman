@@ -285,16 +285,21 @@ process_cmd :: proc(cmd: ^RG_Entry) {
         cmd.rect.rect.y += rg.global_offset.y
         pixels := cast([^]ColorU32)rg.target_pixmap.pixels
         line_color := util.pack_color_4f(cmd.grid.color, rg.target_pixmap.format)
-        bbox := util.rect_to_bbox(util.rect_to_f(cmd.grid.rect))
+        // bbox := util.rect_to_bbox(util.rect_to_f(cmd.grid.rect))
+        bbox := util.rect_to_bbox(cmd.grid.rect)
         x_inc := cmd.grid.cell_size.x
-        for x := bbox.min.x; x < bbox.max.x; x += x_inc {
-            for y: i32 = 0; y < rg.target_pixmap.h; y += 1 {
+        minx := cast(f32)bbox.min.x
+        maxx := cast(f32)bbox.max.x
+        for x := minx; x < maxx; x += x_inc {
+            for y: i32 = bbox.min.y; y < bbox.max.y; y += 1 {
                 pixels[y*game.update_info.framebuffer.w + cast(i32)x] = line_color
             }
         }
         y_inc := cmd.grid.cell_size.y
-        for y := bbox.min.y; y < bbox.max.y ; y += y_inc {
-            for x: i32 = 0; x < rg.target_pixmap.w; x += 1 {
+        miny := cast(f32)bbox.min.y
+        maxy := cast(f32)bbox.max.y
+        for y := miny; y < maxy; y += y_inc {
+            for x: i32 = 0; x < bbox.max.x; x += 1 {
                 pixels[cast(i32)y*game.update_info.framebuffer.w + x] = line_color
             }
         }

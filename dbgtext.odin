@@ -24,7 +24,7 @@ dbgtext_frame :: proc(dbgtext: ^Dbg_Text, output_dims: vec2, scroll_delta: vec2f
     dbgtext_context = dbgtext
     dbgtext.output_dims = output_dims
     height_diff := dbgtext.prev_frame_content_height - output_dims.y
-    if height_diff > 0 {
+    if game.debug_mode != .Editor && height_diff > 0 {
         dbgtext.scroll_offset += scroll_delta.y
         dbgtext.scroll_offset = math.clamp(dbgtext.scroll_offset, 0, cast(f32)height_diff)
         dbgtext.offset.y -= cast(f32)dbgtext.scroll_offset
@@ -32,15 +32,15 @@ dbgtext_frame :: proc(dbgtext: ^Dbg_Text, output_dims: vec2, scroll_delta: vec2f
     dbgtext.prev_frame_content_height = 0
 }
 
-dbgtext_print :: proc(args: ..any) {
-    rg_palette(1, color_white_4b)
+dbgtext_print :: proc(args: ..any, color: Color4b = color_white_4b) {
+    rg_palette(1, color)
     buffer: [256]u8
     text_str := fmt.bprint(buffer[:], ..args)
     _dbgtext_push(text_str)
 }
 
-dbgtext_printf :: proc(fmt_str: string, args: ..any) {
-    rg_palette(1, color_white_4b)
+dbgtext_printf :: proc(fmt_str: string, args: ..any, color: Color4b = color_white_4b) {
+    rg_palette(1, color)
     buffer: [256]u8
     text_str := fmt.bprintf(buffer[:], fmt_str, ..args)
     _dbgtext_push(text_str)

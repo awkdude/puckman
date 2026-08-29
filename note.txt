@@ -1,1 +1,0 @@
-- [ ] When using thread.Pool, use num_outstanding() > 0 instead of pool_finish()

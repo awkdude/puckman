@@ -5,6 +5,7 @@ import "core:os"
 import "core:time"
 import "core:unicode"
 import "core:strings"
+import "core:math"
 
 reset_actors :: proc() {
     player_start := get_position_from_tile_coord(game.player.reset_tile_coord)
@@ -15,7 +16,6 @@ reset_actors :: proc() {
         ghost_actor.tile_coord = ghost_actor.reset_tile_coord
         current_tile_center := get_position_from_tile_coord(ghost_actor.tile_coord) + CELL_DIMS/2
         ghost_actor.position = cast(vec2f)current_tile_center
-        ghost_actor.reviving = false
         ghost_actor.mode = .None
 		#partial switch ghost_actor.direction {
             case .Up, .Down:
@@ -27,8 +27,28 @@ reset_actors :: proc() {
         }
 		ghost_actor.mode = .None
 		ghost_actor.target_tile_coord = GHOST_SCATTER_TARGET_TILE_COORD[ghost_index]
-		ghost_actor.next_tile_coord, _ = ghost_decide_next_move(ghost_actor, ghost_index)
-		next_tile_coord := ghost_actor.next_tile_coord
+        ghost_actor.leave_remaining_sim_ticks = GHOST_LEAVE_DURATIONS[ghost_index]
+    }
+
+    set_idle :: proc(ghost_index: Ghost_Type) {
+        actor := &game.ghosts[ghost_index]
+        actor.mode = .Idle
+        actor.direction = .Down if cast(int)ghost_index % 2 == 0 else .Up
+    }
+
+    // game.ghosts[.Pinky].mode = .Idle
+    // game.ghosts[.Inky].mode = .Idle
+    // game.ghosts[.Clyde].mode = .Idle
+    game.ghosts[.Blinky].direction = .Left
+    // ghost_actor.next_tile_coord, _ = ghost_decide_next_move(ghost_actor, ghost_index)
+    // next_tile_coord := ghost_actor.next_tile_coord
+    set_idle(.Pinky)
+    set_idle(.Inky)
+    set_idle(.Clyde)
+
+    if game.ghost_mode_switch_interval_index < 7 {
+        level_idx := math.clamp(game.level_count, 1, len(GHOST_MODE_SWITCH_LEVEL_INTERVALS))
+        game.mode_switch_sim_ticks_remaining = GHOST_MODE_SWITCH_LEVEL_INTERVALS[level_idx][game.ghost_mode_switch_interval_index]
     }
 }
 
@@ -54,36 +74,14 @@ reset_level :: proc() {
 		if game.ghost_pass_tile_coord == 0 && game.tile_map[i] == .Ghost_Pass {
 			game.ghost_pass_tile_coord = get_tile_coord_from_tile_index(i)
             game.ghost_revive_tile_coord = game.ghost_pass_tile_coord + {0, 2}
+            game.ghost_exit_tile_coord = game.ghost_pass_tile_coord + {0, -1}
 		}
         if game.tile_map[i] == .Dot {
             game.max_num_dots += 1
         }
 	}
+    game.ghost_mode_switch_interval_index = 0
     game.dots_remaining = game.max_num_dots
-    // TODO: set this to scatter
-	game.ghost_global_mode = .Chase
-    when false {
-        for ghost_index in Ghost_Type {
-            ghost_actor := &game.ghosts[ghost_index]
-            ghost_actor.reviving = false
-            tile_pos := get_position_from_tile_coord(ghost_actor.tile_coord)
-            current_tile_center := tile_pos + (CELL_SIZE/2)
-            ghost_actor.position = cast(vec2f)current_tile_center
-            #partial switch ghost_actor.direction {
-                case .Up, .Down:
-                    // Position player x value to tile's center x if up or down
-                    ghost_actor.position.x = cast(f32)current_tile_center.x
-                case .Left, .Right:
-                    // Position player y value to tile's center y if left or right
-                    ghost_actor.position.y = cast(f32)current_tile_center.y
-            }
-            ghost_actor.mode = .None
-            ghost_actor.target_tile_coord = GHOST_SCATTER_TARGET_TILE_COORD[ghost_index]
-            ghost_actor.next_tile_coord, _ = ghost_decide_next_move(ghost_actor, ghost_index)
-            next_tile_coord := ghost_actor.next_tile_coord
-            log.debugf("NEXT: %v is %v going %v", ghost_index, next_tile_coord, ghost_actor.direction)
-        }
-    } else {
-        reset_actors()
-    }
+    game.ghost_global_mode = .Scatter
+    reset_actors()
 }

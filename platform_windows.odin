@@ -35,6 +35,9 @@ bitmap_info: win.BITMAPINFO
 memory_device_context: win.HDC
 framebuffer_pixmap: util.Pixmap
 min_window_size, max_window_size: Maybe(vec2)
+window_position: vec2
+
+MOVE_WINDOW_TO_RIGHTMOST_MONITOR :: false
 
 // FIXME: Mouse position seems to be off after setting dpi awareness
 
@@ -71,13 +74,38 @@ main :: proc() {
 
     assert(win.RegisterClassW(&window_class) != 0)
 
+    // Find right-most monitor
+    monitor_enum_proc :: proc "stdcall" (
+        monitor_handle: win.HMONITOR,
+        _: win.HDC,
+        _: ^win.RECT,
+        _: int) -> win.BOOL
+    {
+        @(static) rightmost_position: vec2
+        monitor_info: win.MONITORINFO = { cbSize=size_of(win.MONITORINFO) }
+        win.GetMonitorInfoW(monitor_handle, &monitor_info)
+
+        when MOVE_WINDOW_TO_RIGHTMOST_MONITOR {
+            if monitor_info.rcWork.left > window_position.x {
+                window_position = {monitor_info.rcWork.left, monitor_info.rcWork.top}
+            }
+        }
+        return win.TRUE
+    }
+    win.EnumDisplayMonitors(
+        nil,
+        nil,
+        monitor_enum_proc,
+        0
+    )
+
     window_handle = win.CreateWindowExW(
         win.WS_EX_ACCEPTFILES,
         app_name,
         win.utf8_to_wstring("win32 window", context.temp_allocator),
         win.WS_OVERLAPPEDWINDOW,
-        0,
-        0,
+        window_position.x,
+        window_position.y,
         win.CW_USEDEFAULT,
         win.CW_USEDEFAULT,
         nil,
@@ -90,14 +118,97 @@ main :: proc() {
     win.UpdateWindow(window_handle)
     // }}}
 
-    // raw input {{{
-    // raw_input_device := win.RAWINPUTDEVICE {
-    //     usUsagePage=0x01,
-    //     usUsage=0x02,
-    //     dwFlags=win.RIDEV_NOLEGACY,
-    //     hwndTarget=nil,
-    // }
-    // assert(win.RegisterRawInputDevices(&raw_input_device, 1, size_of(raw_input_device)) != 0)
+    // rawinput (not needed) {{{
+    when false {
+        mapping_db, file_err := os.read_entire_file("gamecontrollerdb.txt", context.allocator)
+        assert(file_err == nil)
+
+
+        rawinput_devices := [2]win.RAWINPUTDEVICE {
+            {
+                usUsagePage = 0x01,
+                usUsage = 0x05,
+                dwFlags = win.RIDEV_INPUTSINK,
+                hwndTarget = window_handle,
+            },
+            {
+                usUsagePage = 0x01,
+                usUsage = 0x06,
+                dwFlags = win.RIDEV_INPUTSINK,
+                hwndTarget = window_handle,
+            },
+        }
+        reg_res := win.RegisterRawInputDevices(
+            raw_data(rawinput_devices[:]),
+            len(rawinput_devices),
+            size_of(win.RAWINPUTDEVICE)
+        )
+        assert(reg_res == win.TRUE)
+        devlist_count: win.UINT
+        win.GetRawInputDeviceList(
+            nil,
+            &devlist_count,
+            size_of(win.RAWINPUTDEVICELIST)
+        )
+        devlist_array := make([]win.RAWINPUTDEVICELIST, devlist_count)
+        win.GetRawInputDeviceList(
+            raw_data(devlist_array[:]),
+            &devlist_count,
+            size_of(win.RAWINPUTDEVICELIST)
+        )
+        for ridev, i in devlist_array[:devlist_count] {
+            mappings := cast(string)mapping_db
+            device_name: [256]u16
+            dev_info: win.RID_DEVICE_INFO
+            size: u32 
+            win.GetRawInputDeviceInfoW(ridev.hDevice, win.RIDI_DEVICENAME, nil, &size)
+            win.GetRawInputDeviceInfoW(ridev.hDevice, win.RIDI_DEVICENAME, raw_data(device_name[:]), &size)
+            size = size_of(win.RID_DEVICE_INFO)
+            win.GetRawInputDeviceInfoW(ridev.hDevice, win.RIDI_DEVICEINFO, &dev_info, &size)
+            if dev_info.dwType != win.RIM_TYPEHID {
+                continue
+            }
+            // TODO: get GUID!
+            bustype := 0x03
+            guid: [32]u8
+            fmt.bprintf(
+                guid[:],
+                "%02x%02x0000%02x%02x0000%02x%02x0000%02x%02x0000",
+                bustype & 0xff,
+                (bustype >> 8) & 0xff,
+                dev_info.hid.dwVendorId & 0xff,
+                (dev_info.hid.dwVendorId >> 8) & 0xff,
+                dev_info.hid.dwProductId & 0xff,
+                (dev_info.hid.dwProductId >> 8) & 0xff,
+                dev_info.hid.dwVersionNumber & 0xff,
+                (dev_info.hid.dwVersionNumber >> 8) & 0xff,
+            )
+            log.debugf("%v: %s", i, cast(cstring16)raw_data(device_name[:]))
+            log.debugf("GUID: %s", cast(string)guid[:])
+
+
+            hid_dev := win.CreateFileW(
+                cast(cstring16)raw_data(device_name[:]),
+                win.GENERIC_READ | win.GENERIC_WRITE,
+                win.FILE_SHARE_READ | win.FILE_SHARE_WRITE,
+                nil,
+                win.OPEN_EXISTING,
+                0,
+                nil
+            )
+            defer win.CloseHandle(hid_dev)
+            buffer: [128]u16
+            win.HidD_GetProductString(hid_dev, raw_data(buffer[:]), size_of(buffer))
+            log.debug(cast(cstring16)raw_data(buffer[:]))
+            for line in strings.split_lines_iterator(&mappings) {
+                if len(line) > 32 && line[:32] == cast(string)guid[:] {
+                    log.warn("Found %s!", cast(cstring16)raw_data(buffer[:]))
+                    break
+                }
+            }
+        }
+    }
+
     // }}}
 
     // opengl setup {{{
@@ -206,9 +317,15 @@ main :: proc() {
     phase: f32 = 0
     for buffer_index < audio_buffer_size {
         // n: f32 = 523.0 + util.normalize_to_range(cast(f32)buffer_index, 0, cast(f32)audio_buffer_size, 0, 100)
-        n := 200.0 + math.sin(3.0 * math.TAU * (cast(f32)buffer_index / cast(f32)audio_buffer_size)) * 300
+        n := 300.0 + math.sin(5.0 * math.TAU * (cast(f32)buffer_index / cast(f32)audio_buffer_size)) * 300
         phase += 2 * math.PI * (n / 44100.0)
-        sample := (i16)(math.sin(phase) * cast(f32)bits.I16_MAX * 0.05)
+        s := math.sin(phase)
+        if s < 0.0 {
+            s = -1
+        } else {
+            s = 1
+        }
+        sample := (i16)(s * cast(f32)bits.I16_MAX * 0.05)
         audio_buffer[buffer_index+0] = cast(u8)sample
         audio_buffer[buffer_index+1] = cast(u8)(sample >> 8)
         audio_buffer[buffer_index+2] = cast(u8)sample
@@ -339,6 +456,8 @@ window_proc :: proc "stdcall" (
     exit_code: win.LRESULT
     window_event: Maybe(util.Window_Event)
     switch message {
+    case win.WM_INPUT:
+
     case win.WM_CREATE:
     case win.WM_PAINT:
         paintstruct: win.PAINTSTRUCT
